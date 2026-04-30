@@ -7,12 +7,12 @@ import torch
 import tilelang
 import tilelang.language as T
 from tilelang import carver
-from tilelang.carver.arch.ascend import Ascend
+from tilelang.utils.npu_arch import AscendArch
 
 torch.npu.set_device(10)
 os.environ["TILELANG_ASCEND_MODE"] = "Developer"
 
-# 你给的所有 shape
+# shape
 SHAPES = [
     (32, 64),
     (32, 128),
@@ -58,7 +58,7 @@ def run_single_shape(shape, log_dir: Path):
             # -----------------------------
             def get_config():
 
-                arch = Ascend()
+                arch = AscendArch()
 
                 carver_template = carver.ElementwiseTemplate(
                     shape=[M, N],
