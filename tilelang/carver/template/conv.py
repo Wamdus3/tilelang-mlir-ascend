@@ -52,7 +52,7 @@ class ConvTemplate(BaseTemplate):
         Retrieves optimized hardware-aware configurations.
 
         Args:
-            arch (TileDevice, optional): The target hardware architecture.
+            arch (AscendArch, optional): The target hardware architecture.
             topk (int, optional): Number of top configurations to consider.
 
         Returns:

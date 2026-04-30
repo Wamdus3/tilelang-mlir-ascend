@@ -18,7 +18,7 @@ from .analysis import (
 )
 from tvm.target.target import Target
 from tvm.tir.stmt_functor import pre_order_visit
-from .arch import get_arch, is_tensorcore_supported_precision, is_cube_supported_precision
+from tilelang.utils.npu_arch import get_arch, is_tensorcore_supported_precision, is_cube_supported_precision
 import logging
 import torch, torch_npu
 

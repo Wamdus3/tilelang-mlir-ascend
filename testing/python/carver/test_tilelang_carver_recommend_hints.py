@@ -2,7 +2,7 @@
 # Licensed under the MIT License.
 import tilelang.testing
 from tilelang import carver
-from tilelang.carver.arch import auto_infer_current_arch
+from tilelang.carver.template.base import auto_infer_current_arch
 from typing import List
 
 

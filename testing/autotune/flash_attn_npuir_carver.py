@@ -7,7 +7,7 @@ import tilelang.language as T
 import torch
 import os
 from tilelang import carver
-from tilelang.carver.arch.ascend import Ascend
+from tilelang.utils.npu_arch import AscendArch
 
 tilelang.cache.clear_cache()
 
@@ -19,7 +19,7 @@ args = parser.parse_args()
 
 seq_len, dim = args.S, args.D
 def get_config() -> list[dict]:
-    arch = Ascend()
+    arch = AscendArch()
     carver_template = carver.FlashAttentionTemplate(
         head_dim=dim,
         seq_length=seq_len,

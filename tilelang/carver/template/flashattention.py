@@ -2,9 +2,8 @@
 # Licensed under the MIT License.
 
 from dataclasses import dataclass
-from .base import BaseTemplate
+from .base import BaseTemplate, AscendArch
 from tvm import te
-from ..arch import TileDevice
 from ..roller import Hint
 from ..roller import PrimFuncNode, OutputNode, Edge
 from typing import List
@@ -29,12 +28,12 @@ class FlashAttentionTemplate(BaseTemplate):
     out_dtype: str = "float16"
     accum_dtype: str = "float16"
 
-    def get_hardware_aware_configs(self, arch: TileDevice = None, topk: int = 10) -> List[Hint]:
+    def get_hardware_aware_configs(self, arch: AscendArch = None, topk: int = 10) -> List[Hint]:
         """
         Retrieves optimized hardware-aware configurations.
 
         Args:
-            arch (TileDevice, optional): The target hardware architecture.
+            arch (AscendArch, optional): The target hardware architecture.
             topk (int, optional): Number of top configurations to consider.
 
         Returns:

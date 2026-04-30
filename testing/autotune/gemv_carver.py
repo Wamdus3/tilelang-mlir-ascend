@@ -7,7 +7,7 @@ import torch
 import os
 
 from tilelang import carver
-from tilelang.carver.arch.ascend import Ascend
+from tilelang.utils.npu_arch import AscendArch
 
 tilelang.cache.clear_cache()
 
@@ -20,7 +20,7 @@ N = args.n
 K = args.k
 
 def get_config() -> list[dict]:
-    arch = Ascend()
+    arch = AscendArch()
     carver_template = carver.GEMVTemplate(
         N = N,
         K = K,
