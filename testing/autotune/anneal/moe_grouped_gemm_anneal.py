@@ -8,6 +8,7 @@ from tilelang.carver.anneal.policy import AnnealTemplate
 
 tl.cache.clear_cache()
 
+
 # ============================================================
 # Phase 1: NPU Tile 调度器（保留但不使用）
 # ============================================================
@@ -45,7 +46,9 @@ def tile_scheduler_kernel_npu(num_experts: int, max_tiles: int, block_m: int):
             else:
                 tile_expert_ids[tile_id] = -1
                 tile_row_offsets[tile_id] = 0
+
     return _sched_main
+
 
 # ============================================================
 # Phase 2: NPU 分组 GEMM（修改：total_tiles 改为标量，早期退出用条件包裹）
@@ -68,54 +71,60 @@ dtype = torch.float16
 #         {"block_m":16,"block_n":32,"block_k":64},
 #     ]
 
+
 def get_config():
     anneal_template = AnnealTemplate(shape=[numel, N, K], use_template="Matmul")
 
     hints = anneal_template.get_configs()
 
     configs = []
-    hint_value_min = -1
     for hint in hints:
         print(hint.kwargs)
         print(hint.value)
-        configs.append({
-            "block_m":hint.kwargs[0],
-            "block_n":hint.kwargs[1],
-            "block_k":hint.kwargs[2],
-        })
+        configs.append(
+            {
+                "block_m": hint.kwargs[0],
+                "block_n": hint.kwargs[1],
+                "block_k": hint.kwargs[2],
+            }
+        )
     return configs
 
 
-def cpu_ref(A, B,
-        tile_expert_ids,
-        tile_row_offsets,
-        true_offsets,
-        true_sizes,
-        total_tiles_val):
+def cpu_ref(
+    A, B, tile_expert_ids, tile_row_offsets, true_offsets, true_sizes, total_tiles_val
+):
     C_ref = torch.zeros((numel, N), dtype=torch.float32)
     start = 0
     for e in range(num_experts):
         size = true_sizes[e].item()
         if size == 0:
             continue
-        A_e = A[start:start+size]
+        A_e = A[start : start + size]
         B_e = B[e]
         C_e = A_e @ B_e.T
-        C_ref[start:start+size] = C_e
+        C_ref[start : start + size] = C_e
         start += size
     return C_ref.to(dtype).npu()
 
+
 def supply_prog(params, config):
     torch.manual_seed(0)
-    
+
     max_tiles = numel // config["block_m"] + num_experts
 
-    routing_idx = torch.randint(0, num_experts, (numel, ), device='npu')
-    true_sizes = torch.bincount(routing_idx, minlength=num_experts).to(torch.int32).npu()
-    true_offsets = torch.cumsum(torch.cat([torch.tensor([0], device='npu'), true_sizes[:-1]]), dim=0).to(torch.int32)
-    
+    routing_idx = torch.randint(0, num_experts, (numel,), device="npu")
+    true_sizes = (
+        torch.bincount(routing_idx, minlength=num_experts).to(torch.int32).npu()
+    )
+    true_offsets = torch.cumsum(
+        torch.cat([torch.tensor([0], device="npu"), true_sizes[:-1]]), dim=0
+    ).to(torch.int32)
+
     true_sizes_cpu = true_sizes.cpu().numpy()
-    tiles_per_expert = [(s + config["block_m"] - 1) // config["block_m"] for s in true_sizes_cpu]
+    tiles_per_expert = [
+        (s + config["block_m"] - 1) // config["block_m"] for s in true_sizes_cpu
+    ]
     total_tiles_val = sum(tiles_per_expert)
 
     tile_expert_ids_cpu = []
@@ -128,10 +137,12 @@ def supply_prog(params, config):
     tile_expert_ids_cpu += [-1] * (max_tiles - total_tiles_val)
     tile_row_offsets_cpu += [0] * (max_tiles - total_tiles_val)
 
-    tile_expert_ids = torch.tensor(tile_expert_ids_cpu, dtype=torch.int32, device='npu')
-    tile_row_offsets = torch.tensor(tile_row_offsets_cpu, dtype=torch.int32, device='npu')
-    A = torch.randn((numel, K), dtype=dtype, device='npu')
-    B = torch.randn((num_experts, N, K), dtype=dtype, device='npu')
+    tile_expert_ids = torch.tensor(tile_expert_ids_cpu, dtype=torch.int32, device="npu")
+    tile_row_offsets = torch.tensor(
+        tile_row_offsets_cpu, dtype=torch.int32, device="npu"
+    )
+    A = torch.randn((numel, K), dtype=dtype, device="npu")
+    B = torch.randn((num_experts, N, K), dtype=dtype, device="npu")
 
     return [
         A,
@@ -140,8 +151,9 @@ def supply_prog(params, config):
         tile_row_offsets,
         true_offsets,
         true_sizes,
-        total_tiles_val
+        total_tiles_val,
     ]
+
 
 @tl.autotune(
     configs=get_config(),
@@ -164,8 +176,8 @@ def moe_gemm_kernel_npu(
     group_size_m: int,
 ):
     accum_dtype = "float32"
-    _k_aligned = (K % block_k == 0)
-    _n_aligned = (N % block_n == 0)
+    _k_aligned = K % block_k == 0
+    _n_aligned = N % block_n == 0
     _b_copy_ok = _k_aligned and _n_aligned
     _num_pid_n = T.ceildiv(N, block_n)
     max_tiles = numel // block_m + num_experts
@@ -184,7 +196,6 @@ def moe_gemm_kernel_npu(
         total_tiles: T.int32,
     ):
         with T.Kernel(_total_ctas, is_npu=True) as (pid, _):
-
             A_shared = T.alloc_shared([block_m, block_k], dtype)
             B_shared = T.alloc_shared([block_n, block_k], dtype)
             C_local = T.alloc_fragment([block_m, block_n], accum_dtype)
@@ -212,20 +223,37 @@ def moe_gemm_kernel_npu(
                 actual_cols = T.min(block_n, N - n_start)
 
                 # T.clear(C_local)
-                
+
                 for k in T.Pipelined(T.ceildiv(K, block_k), num_stages=num_stages):
                     k_offset = k * block_k
 
                     actual_k = T.min(block_k, K - k_offset)
 
-                    T.copy(A[m_start : m_start + block_m, k_offset : k_offset + actual_k], A_shared)
-                    
-                    T.copy(B[expert_id, n_start : n_start + actual_cols, k_offset : k_offset + actual_k], B_shared)
+                    T.copy(
+                        A[m_start : m_start + block_m, k_offset : k_offset + actual_k],
+                        A_shared,
+                    )
 
-                    T.gemm(A_shared, B_shared, C_local, b_transpose=True, initC=(k==0))
+                    T.copy(
+                        B[
+                            expert_id,
+                            n_start : n_start + actual_cols,
+                            k_offset : k_offset + actual_k,
+                        ],
+                        B_shared,
+                    )
 
-                T.copy(C_local[:actual_rows, :actual_cols], C[m_start : m_start + actual_rows, n_start : n_start + actual_cols])
+                    T.gemm(
+                        A_shared, B_shared, C_local, b_transpose=True, initC=(k == 0)
+                    )
+
+                T.copy(
+                    C_local[:actual_rows, :actual_cols],
+                    C[m_start : m_start + actual_rows, n_start : n_start + actual_cols],
+                )
+
     return _gemm_main
+
 
 # ============================================================
 # 测试（不变）
@@ -235,22 +263,20 @@ def test_moe_grouped_gemm_npu():
         print("NPU not available, skip test.")
         return
 
-
     kernel = moe_gemm_kernel_npu(
-        numel = numel,
-        num_experts = num_experts,
-        N = N,
-        K = K,
-        dtype = "float16",
-        num_stages = 2,
-        group_size_m = 1,
+        numel=numel,
+        num_experts=num_experts,
+        N=N,
+        K=K,
+        dtype="float16",
+        num_stages=2,
+        group_size_m=1,
     )
 
-    
     print("Best Config:", kernel.get_tuner_result())
     print("Test Passed!")
-    
+
 
 if __name__ == "__main__":
-    os.environ['TILELANG_ASCEND_MODE'] = 'Developer'
+    os.environ["TILELANG_ASCEND_MODE"] = "Developer"
     test_moe_grouped_gemm_npu()

@@ -4,7 +4,10 @@
 # Import necessary modules and classes
 from abc import ABC, abstractmethod  # For defining abstract base classes
 from dataclasses import dataclass, field  # For defining data classes
-from tilelang.utils.npu_arch import AscendArch, get_arch_obj  # Import Ascend architecture
+from tilelang.utils.npu_arch import (
+    AscendArch,
+    get_arch_obj,
+)  # Import Ascend architecture
 from ..roller.hint import Hint  # Import the Hint class
 from ..roller.node import OutputNode  # Import the OutputNode class
 from typing import List  # For type hinting
@@ -19,13 +22,15 @@ def auto_infer_current_arch() -> AscendArch:
 @dataclass
 class BaseTemplate(ABC):
     """
-    Base class template for hardware-aware configurations. 
-    This serves as an abstract base class (ABC) that defines the structure 
+    Base class template for hardware-aware configurations.
+    This serves as an abstract base class (ABC) that defines the structure
     for subclasses implementing hardware-specific optimizations.
     """
 
     # The architecture of the device, inferred automatically unless explicitly set
-    _arch: AscendArch = field(default_factory=auto_infer_current_arch, init=False, repr=False)
+    _arch: AscendArch = field(
+        default_factory=auto_infer_current_arch, init=False, repr=False
+    )
 
     # The function associated with this template, initially None
     _func: PrimFunc = field(default=None, init=False, repr=False)
@@ -34,12 +39,14 @@ class BaseTemplate(ABC):
     _output_nodes: List[OutputNode] = field(default=None, init=False, repr=False)
 
     @abstractmethod
-    def get_hardware_aware_configs(self, arch: AscendArch = None, topk: int = 10) -> List[Hint]:
+    def get_hardware_aware_configs(
+        self, arch: AscendArch = None, topk: int = 10
+    ) -> List[Hint]:
         """
         Abstract method that must be implemented by subclasses.
-        It should return a list of hardware-aware configurations (hints) 
+        It should return a list of hardware-aware configurations (hints)
         based on the specified architecture.
-        
+
         Args:
             arch (AscendArch, optional): The target architecture. Defaults to None.
             topk (int, optional): Number of top configurations to return. Defaults to 10.
@@ -84,7 +91,7 @@ class BaseTemplate(ABC):
         """
         Placeholder method that should be implemented by subclasses.
         This method is responsible for initializing the function.
-        
+
         Raises:
             NotImplementedError: If not implemented in the subclass.
         """

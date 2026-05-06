@@ -12,7 +12,7 @@ from tilelang.utils.npu_arch import AscendArch
 torch.npu.set_device(10)
 os.environ["TILELANG_ASCEND_MODE"] = "Developer"
 
-# 你给的所�?shape
+# shape
 SHAPES = [
     (32, 64),
     (32, 128),

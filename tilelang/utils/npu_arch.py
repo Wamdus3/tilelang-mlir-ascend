@@ -76,14 +76,14 @@ class AscendArch:
 
         try:
             from tilelang.utils import NPUUtils
+
             npuutils = NPUUtils()
             self.compute_max_core = npuutils.get_aicube_core_num()
             self.aicube_core_num = self.compute_max_core
             self.aivector_core_num = npuutils.get_aivector_core_num()
         except Exception as e:
             logging.getLogger(__name__).warning(
-                f"Failed to get Ascend arch from NPUUtils: {e}. "
-                "Using fallback specs."
+                f"Failed to get Ascend arch from NPUUtils: {e}. Using fallback specs."
             )
             self.compute_max_core = spec["cores"]
             self.aicube_core_num = spec["cores"]
@@ -104,9 +104,10 @@ class AscendArch:
         self.bandwidth = [900000, 900000]
         self.warp_size = 1
         self.sm_partition = 1
-        
+
         try:
             from tvm.target import Target
+
             self.target = Target("llvm -keys=ascend")
         except ImportError:
             self.target = None
@@ -152,17 +153,23 @@ def is_cube_supported_precision(in_dtype: str, accum_dtype: str, arch) -> bool:
     if not isinstance(arch, AscendArch):
         return False
     if arch.chip_name in ["Ascend910A", "Ascend910B", "Ascend310P"]:
-        return in_dtype in ["float16", "bfloat16"] and accum_dtype in ["float16", "bfloat16", "float32"]
+        return in_dtype in ["float16", "bfloat16"] and accum_dtype in [
+            "float16",
+            "bfloat16",
+            "float32",
+        ]
     return False
 
 
 class AscendArch910B(AscendArch):
     """Specific properties for Ascend 910B series."""
+
     pass
 
 
 class AscendArch910_95(AscendArch):
     """Specific properties for Ascend 910_95 series."""
+
     pass
 
 
@@ -195,6 +202,7 @@ def get_ascend_device_name() -> str:
     # 2. Secondary priority: Runtime capability detection
     try:
         from tilelang.utils import NPUUtils
+
         return NPUUtils.get().get_arch()
     except Exception as e:
         # We don't want to crash on non-Ascend machines, but silent pass is bad for debugging
@@ -216,19 +224,21 @@ def supports_native_bf16(device_name: str = None) -> bool:
 
 def get_arch(target=None) -> AscendArch:
     """Get AscendArch from TVM Target or return default AscendArch.
-    
+
     Args:
         target: TVM Target object (ignored, always returns AscendArch)
-        
+
     Returns:
         AscendArch instance
     """
     return get_arch_obj()
 
 
-def is_tensorcore_supported_precision(in_dtype: str, accum_dtype: str, arch=None) -> bool:
+def is_tensorcore_supported_precision(
+    in_dtype: str, accum_dtype: str, arch=None
+) -> bool:
     """Check if tensorcore supports the precision (Ascend uses cube, not tensorcore).
-    
+
     Returns False for Ascend as tensorcore is NVIDIA-specific.
     """
     return False

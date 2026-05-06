@@ -456,7 +456,10 @@ class AnnealTemplate:
         ]
 
         annel_carver = AnnealCarver(
-            policy, custom_kernel, _get_mem_caps(self.mem_caps, self.arch), self.annealparam
+            policy,
+            custom_kernel,
+            _get_mem_caps(self.mem_caps, self.arch),
+            self.annealparam,
         )
 
         return annel_carver.get_configs_from_anneal()
@@ -503,7 +506,10 @@ class AnnealTemplate:
             ),  # matmul 1
         ]
         annel_carver = AnnealCarver(
-            policy, custom_kernel, _get_mem_caps(self.mem_caps, self.arch), self.annealparam
+            policy,
+            custom_kernel,
+            _get_mem_caps(self.mem_caps, self.arch),
+            self.annealparam,
         )
 
         return annel_carver.get_configs_from_anneal()
@@ -611,7 +617,10 @@ class AnnealTemplate:
         ]
 
         annel_carver = AnnealCarver(
-            policy, custom_kernel, _get_mem_caps(self.mem_caps, self.arch), self.annealparam
+            policy,
+            custom_kernel,
+            _get_mem_caps(self.mem_caps, self.arch),
+            self.annealparam,
         )
 
         return annel_carver.get_configs_from_anneal()

@@ -38,7 +38,7 @@ def _init_npu_params():
     device = []
     prop = {"num_aicore": arch.compute_max_core}
 
-    num_cube_core = prop["num_aicore"]
+    num_cube_core = arch.aicube_core_num
     num_vector_core = arch.aivector_core_num
     ub_size_in_kbytes = arch.ub_cap
     rf_size_in_kbytes = None

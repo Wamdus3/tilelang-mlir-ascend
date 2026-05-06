@@ -12,7 +12,6 @@ from ..utils import get_roller_hints_from_output_nodes, get_tensorized_func_and_
 
 @dataclass
 class FlashAttentionTemplate(BaseTemplate):
-
     _output_nodes: List[OutputNode] = None
 
     # Operation-related configuration parameters
@@ -28,7 +27,9 @@ class FlashAttentionTemplate(BaseTemplate):
     out_dtype: str = "float16"
     accum_dtype: str = "float16"
 
-    def get_hardware_aware_configs(self, arch: AscendArch = None, topk: int = 10) -> List[Hint]:
+    def get_hardware_aware_configs(
+        self, arch: AscendArch = None, topk: int = 10
+    ) -> List[Hint]:
         """
         Retrieves optimized hardware-aware configurations.
 
@@ -39,15 +40,17 @@ class FlashAttentionTemplate(BaseTemplate):
         Returns:
             List[Hint]: A list of optimization hints for hardware acceleration.
         """
-        roller_hints = get_roller_hints_from_output_nodes(self.output_nodes, arch=arch, topk=topk)
+        roller_hints = get_roller_hints_from_output_nodes(
+            self.output_nodes, arch=arch, topk=topk
+        )
         return roller_hints
 
     def initialize_function(self) -> None:
         """
         Defines and initializes the matrix multiplication computation.
 
-        This method sets up placeholders for input matrices, computes 
-        the matrix multiplication using TVM's compute API, 
+        This method sets up placeholders for input matrices, computes
+        the matrix multiplication using TVM's compute API,
         and optionally applies bias and type casting.
 
         Raises:
@@ -64,8 +67,18 @@ class FlashAttentionTemplate(BaseTemplate):
         accum_dtype = self.accum_dtype
 
         # Equalize the input shaps into a matmul shape
-        QK_B, QK_M, QK_N, QK_K = batch_size * num_heads, seq_length, seq_kv_length, head_dim
-        SV_B, SV_M, SV_N, SV_K = batch_size * num_heads, seq_length, head_dim, seq_kv_length
+        QK_B, QK_M, QK_N, QK_K = (
+            batch_size * num_heads,
+            seq_length,
+            seq_kv_length,
+            head_dim,
+        )
+        SV_B, SV_M, SV_N, SV_K = (
+            batch_size * num_heads,
+            seq_length,
+            head_dim,
+            seq_kv_length,
+        )
 
         # Define tensor shapes based on transpose flags
         def create_matmul(B, M, N, K):
@@ -76,7 +89,9 @@ class FlashAttentionTemplate(BaseTemplate):
 
             # Create TVM placeholders for input tensors
             A = te.placeholder(input_shape, name="A", dtype=in_dtype)  # Input matrix A
-            B = te.placeholder(weight_shape, name="B", dtype=in_dtype)  # Weight matrix B
+            B = te.placeholder(
+                weight_shape, name="B", dtype=in_dtype
+            )  # Weight matrix B
 
             # Define a reduction axis for matrix multiplication
             k = te.reduce_axis((0, K), name="k")
@@ -95,9 +110,10 @@ class FlashAttentionTemplate(BaseTemplate):
                 A_indices = [b, i, k]
                 B_indices = [b, j, k]
                 return te.sum(
-                    A[tuple(A_indices)].astype(accum_dtype) *
-                    B[tuple(B_indices)].astype(accum_dtype),
-                    axis=k)
+                    A[tuple(A_indices)].astype(accum_dtype)
+                    * B[tuple(B_indices)].astype(accum_dtype),
+                    axis=k,
+                )
 
             # Compute matrix multiplication result
             C = te.compute(

@@ -6,7 +6,7 @@ Carver combines hardware architecture information, user-defined tile structures,
 
 ---
 
-### Key Features
+## Key Features
 - **Unified Tiling Framework**: Generate tile candidates under a unified API.
 - **Architecture-Specific Modeling**: Take into account Ascend NPU constraints (UB size, L1/L0 buffer sizes, CUBE unit specs).
 - **Flexible Templates**: High-level templates (like `MatmulTemplate`, `GeneralReductionTemplate`, `ElementwiseTemplate`) let you concisely specify kernel structures.
@@ -69,7 +69,6 @@ for hint in hints:
 A tile structure composed of S and R can simulate various cases. For example, structure `SS` represents a 2D element-wise operation, while `SSR` can represent a general matrix multiplication.
 
 We can specialize more advanced templates to provide finer-grained information, such as `MatmulTemplate`.
-
 
 ### Matmul Template
 
@@ -152,8 +151,6 @@ You might interpret this in **Triton** as:
 - If `use_tc` is true, consider using Tensor Cores (TensorOps in Triton) if supported.
 
 This helps quickly test multiple configurations without manually guessing.
-
-
 
 ## Supported Templates
 
