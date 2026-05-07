@@ -127,17 +127,11 @@ def run_single_shape(shape, log_dir: Path):
                             T.copy(X[bx * block_M, col_base], X_shared)
                             T.vmul(X_shared, X_shared, X_shared)
                             T.reduce(X_shared, local_reduce, dims=1, reduce_mode="sum")
-                            for i in T.serial(block_M):
-                                row_rms[i, 0] = row_rms[i, 0] + local_reduce[i, 0]
+                            T.vadd(row_rms, local_reduce, row_rms)
 
-                        for i in T.serial(block_M):
-                            row = bx * block_M + i
-                            if row < M:
-                                row_rms[i, 0] = row_rms[i, 0] - row_rms[i, 0] * (
-                                    1.0 - 1.0 / N
-                                )
-                                row_rms[i, 0] = row_rms[i, 0] + eps
-                                T.vrsqrt(row_rms[i, 0], row_rstd[i, 0])
+                        T.vdiv(row_rms, N, row_rms)
+                        T.vadd(row_rms, eps, row_rms)
+                        T.vrsqrt(row_rms, row_rstd)
 
                         for ko in T.serial(T.ceildiv(N, block_N)):
                             col_base = ko * block_N
