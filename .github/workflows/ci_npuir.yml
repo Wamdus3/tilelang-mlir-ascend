@@ -146,6 +146,7 @@ jobs:
           examples/deepseek_v4/example_mhc_post.py
           examples/deepseek_v4/example_sparse_attn_kernel_highperf.py
           examples/deepseek_v4/example_sparse_attn_kernel.py
+          examples/deepseek_v4/example_sparse_attn_bwd_kernel.py
           examples/norm/layer_norm.py
         )
 
