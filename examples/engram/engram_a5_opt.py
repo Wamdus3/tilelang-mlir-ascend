@@ -78,6 +78,9 @@ def get_engram_gate_fwd_kernel(
             per_block = T.ceildiv(num_tokens, num_persistent_blocks)
             t_start = T.min(per_block * pid_b, num_tokens)
             t_end = T.min(per_block * (pid_b + 1), num_tokens)
+            tmp_k = T.alloc_shared((vec_size,), dtype)
+            tmp_x = T.alloc_shared((vec_size,), dtype)
+            tmp_v = T.alloc_shared((vec_size,), dtype)
 
             tmp_val = T.alloc_fragment((vec_size,), accum_dtype)
 
@@ -108,12 +111,15 @@ def get_engram_gate_fwd_kernel(
                         sub_base = (i_b - 1) * blk_d + i_sub * reduce_blk
                         for tid in T.serial(threads):
                             for i_k in T.Parallel(vec_size):
-                                x_local_1[i_k] = x_smem[sub_base + tid * vec_size + i_k]
+                                tmp_x[i_k] = x_smem[sub_base + tid * vec_size + i_k]
                                 # 动态(num_blk-1)%2读取：直接访问对应一维共享内存
                                 if prev_phase == 0:
-                                    k_local_1[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
+                                    tmp_k[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
                                 else:
-                                    k_local_1[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
+                                    tmp_k[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
+                            T.vcast(tmp_x, x_local_1)
+                            T.vcast(tmp_k, k_local_1)
+                            
                             T.copy(weight_fused[pid_h, sub_base + tid * vec_size: sub_base + tid * vec_size + vec_size ], w_local_1)
                             T.vmul(x_local_1, x_local_1, tmp_local)
                             T.reduce(
@@ -147,12 +153,16 @@ def get_engram_gate_fwd_kernel(
                     sub_base = (num_blk - 1) * blk_d + i_sub * reduce_blk
                     for tid in T.serial(threads):
                         for i_k in T.Parallel(vec_size):
-                            x_local_2[i_k] = x_smem[sub_base + tid * vec_size + i_k]
+                            tmp_x[i_k] = x_smem[sub_base + tid * vec_size + i_k]
                             # 动态(num_blk-1)%2读取：直接访问对应一维共享内存
                             if (num_blk - 1) % 2 == 0:
-                                k_local_2[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
+                                tmp_k[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
                             else:
-                                k_local_2[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
+                                tmp_k[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
+
+                        T.vcast(tmp_x, x_local_2)
+                        T.vcast(tmp_k, k_local_2)
+                        
                         T.copy(weight_fused[pid_h, sub_base + tid * vec_size: sub_base + tid * vec_size + vec_size ], w_local_2)
                         T.vmul(x_local_2, x_local_2, tmp_local)
                         T.reduce(
@@ -246,15 +256,21 @@ def get_engram_gate_fwd_kernel(
                         sub_base = i_b * blk_d + i_sub * reduce_blk
                         for tid in T.serial(threads):
                             for i_k in T.Parallel(vec_size):
-                                tmp_val[i_k] = x_smem[sub_base + tid * vec_size + i_k]
+                                tmp_x[i_k] = x_smem[sub_base + tid * vec_size + i_k]
                                 # 动态tile_phase读取v：直接访问对应一维共享内存
                                 if tile_phase == 0:
-                                    v_local[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
+                                    tmp_v[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
                                 else:
-                                    v_local[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
+                                    tmp_v[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
+                            
+                            T.vcast(tmp_x, tmp_val)
+                            T.vcast(tmp_v, v_local)
+
                             T.vmul(v_local, gate_score_reducer, v_local)
                             T.vadd(tmp_val, v_local, tmp_val)
-                            T.copy(tmp_val, output[i_s, pid_h, sub_base + tid * vec_size: sub_base + tid * vec_size + vec_size])
+
+                            for i_k in T.serial(vec_size):
+                                T.copy(tmp_val[i_k], output[i_s, pid_h, sub_base + tid * vec_size + i_k])                                
 
                     # Prefetch v[i_b+2] into freed kv_smem bank
                     if i_b + 2 < num_blk:
