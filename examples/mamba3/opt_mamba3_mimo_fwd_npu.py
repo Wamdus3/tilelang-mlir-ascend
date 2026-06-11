@@ -479,7 +479,7 @@ def mamba_mimo_fwd(
                     )
                 else:
                     if hasZ:
-                        z_frag = T.alloc_fragment([chunk_size, P], accum_dtype)
+                        z_frag = T.alloc_fragment([chunk_size, 1, P], accum_dtype)
                         T.copy(
                             Z[i_b, chunk_start : chunk_start + chunk_size, i_h, :],
                             z_frag,
@@ -497,21 +497,25 @@ def mamba_mimo_fwd(
                         T.vmul(z_frag, mimoZ_shared, o_gated)
 
                         T.vtanh(o_gated, o_gated_tanh)
-                        o_gated_mul_tmp = T.alloc_shared(
+                        o_gated_mul_tmp = T.alloc_fragment(
                             [chunk_size, R, P], accum_dtype
                         )
                         T.vmul(o_gated, o_gated_tanh, o_gated_mul_tmp)
                         T.vadd(o_gated, o_gated_mul_tmp, z_expanded_frag)
 
+                        o_mimo_accum_reshaped_frag = T.alloc_fragment(
+                            [chunk_size, R, P], accum_dtype
+                        )
+                        T.reshape(o_mimo_accum_frag, o_mimo_accum_reshaped_frag)
+                        T.vmul(
+                            o_mimo_accum_reshaped_frag,
+                            z_expanded_frag,
+                            o_mimo_accum_reshaped_frag,
+                        )
                         lqk_PsiV_reshaped_shared = T.alloc_shared(
                             [chunk_size, R, P], accum_dtype
                         )
-                        for cs, r, p in T.Parallel(chunk_size, R, P):
-                            lqk_PsiV_reshaped_shared[cs, r, p] = (
-                                o_mimo_accum_frag[cs * R + r, p]
-                                * z_expanded_frag[cs, r, p]
-                            )
-
+                        T.copy(o_mimo_accum_reshaped_frag, lqk_PsiV_reshaped_shared)
                         T.copy(
                             lqk_PsiV_reshaped_shared,
                             O[i_b, chunk_start : chunk_start + chunk_size, :, i_h, :],
