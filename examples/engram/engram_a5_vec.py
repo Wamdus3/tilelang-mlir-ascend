@@ -50,6 +50,8 @@ def get_engram_gate_fwd_kernel(
             rstd_x: T.Tensor([num_tokens, hc_mult], accum_dtype),
             rstd_k: T.Tensor([num_tokens, hc_mult], accum_dtype),
             kk_out: T.Tensor([num_tokens, hc_mult, hidden_size], accum_dtype),
+            x2_sum_out: T.Tensor([num_tokens, hc_mult], accum_dtype),
+            k2_sum_out: T.Tensor([num_tokens, hc_mult], accum_dtype),
     ):
         with T.Kernel(hc_mult * num_persistent_blocks, is_npu=True) as (cid, _):
             pid_h = cid % hc_mult
@@ -109,6 +111,9 @@ def get_engram_gate_fwd_kernel(
                 T.copy(tmp_vec, kk_out[i_s, pid_h, :])
                 T.reduce(tmp_vec, rstd_k_reducer, dims=0, reduce_mode='sum', clear=True)
 
+                T.copy(rstd_x_reducer, x2_sum_out[i_s, pid_h: pid_h + 1])
+                T.copy(rstd_k_reducer, k2_sum_out[i_s, pid_h: pid_h + 1])
+
                 T.vmul(x_vec, k_vec, tmp_vec)
                 T.vmul(tmp_vec, w_vec, tmp_vec)
                 T.reduce(tmp_vec, gate_score_reducer, dims=0, reduce_mode='sum', clear=True)
@@ -118,9 +123,13 @@ def get_engram_gate_fwd_kernel(
                 # gate_score_reducer[0] = gate_score_local[0]
 
                 # rstd_x_reducer[0] = T.rsqrt(rstd_x_reducer[0] / hidden_size + eps)
+                rstd_x_mean = T.alloc_fragment((1,), accum_dtype)
+                rstd_k_mean = T.alloc_fragment((1,), accum_dtype)
+
                 rstd_x_reducer[0] = rstd_x_reducer[0] / hidden_size + eps
                 T.vrsqrt(rstd_x_reducer, rstd_x_reducer)
                 # rstd_k_reducer[0] = T.rsqrt(rstd_k_reducer[0] / hidden_size + eps)
+
                 rstd_k_reducer[0] = rstd_k_reducer[0] / hidden_size + eps
                 T.vrsqrt(rstd_k_reducer, rstd_k_reducer)
 
@@ -228,7 +237,9 @@ def engram_gate_ref(
     output = output.bfloat16()
 
     if save_for_backward:
-        return output, raw_dot, gate_score, rstd_x, rstd_k, kk
+        x2_sum = x.pow(2).sum(-1)
+        k2_sum = k_f.pow(2).sum(-1)
+        return output, raw_dot, gate_score, rstd_x, rstd_k, kk, x2_sum, k2_sum
     return output
 
 
@@ -246,6 +257,8 @@ def engram_gate_fwd(
     torch.Tensor | None,
     torch.Tensor | None,
     torch.Tensor | None,
+    torch.Tensor,
+    torch.Tensor,
     torch.Tensor,
 ]:
     num_tokens, hc_mult, hidden_size = hidden_states.shape
@@ -272,15 +285,29 @@ def engram_gate_fwd(
         kk = torch.empty(
             (num_tokens, hc_mult, hidden_size), dtype=torch.float32, device=hidden_states.device
         )
+        x2_sum = torch.empty(
+            (num_tokens, hc_mult), dtype=torch.float32, device=hidden_states.device
+        )
+        k2_sum = torch.empty(
+            (num_tokens, hc_mult), dtype=torch.float32, device=hidden_states.device
+        )
     else:
         dot = gate_score = rstd_x = rstd_k = None
         kk = torch.empty(
             (num_tokens, hc_mult, hidden_size), dtype=torch.float32, device=hidden_states.device
         )
+        x2_sum = torch.empty(
+            (num_tokens, hc_mult), dtype=torch.float32, device=hidden_states.device
+        )
+        k2_sum = torch.empty(
+            (num_tokens, hc_mult), dtype=torch.float32, device=hidden_states.device
+        )
 
-    kernel(hidden_states, k, v, weight_fused, output, dot, gate_score, rstd_x, rstd_k, kk)
+    kernel(
+        hidden_states, k, v, weight_fused, output, dot, gate_score, rstd_x, rstd_k, kk, x2_sum, k2_sum
+    )
 
-    return output, dot, gate_score, rstd_x, rstd_k, kk
+    return output, dot, gate_score, rstd_x, rstd_k, kk, x2_sum, k2_sum
 
 
 def calc_diff(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -290,7 +317,7 @@ def calc_diff(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return 1 - sim if denominator != 0 else 0
 
 
-def calc_mismatch_count(x: torch.Tensor, y: torch.Tensor, rtol: float = 1e-1, atol: float = 1e-1) -> tuple[
+def calc_mismatch_count(x: torch.Tensor, y: torch.Tensor, rtol: float = 1e-2, atol: float = 1e-2) -> tuple[
     int, int, float
 ]:
     x, y = x.double(), y.double()
@@ -299,6 +326,14 @@ def calc_mismatch_count(x: torch.Tensor, y: torch.Tensor, rtol: float = 1e-1, at
     total_count = x.numel()
     mismatch_ratio = mismatch_count / total_count if total_count > 0 else 0.0
     return mismatch_count, total_count, mismatch_ratio
+
+
+def print_abs_error(name: str, x: torch.Tensor, y: torch.Tensor) -> None:
+    diff = (x.float() - y.float()).abs()
+    print(
+        f"{name}: max_abs={diff.max().item():.6e}, "
+        f"mean_abs={diff.mean().item():.6e}"
+    )
 
 
 def assert_equal(
@@ -377,11 +412,11 @@ def run_test():
 
     weight_fused = (weight_hidden.float() * weight_embed.float()).contiguous()
 
-    out_save, dot, gate_score, rstd_x, rstd_k, kk = engram_gate_fwd(
+    out_save, dot, gate_score, rstd_x, rstd_k, kk, x2_sum, k2_sum = engram_gate_fwd(
         hidden_states, k, v, weight_fused, eps, clamp_value, save_for_backward=True
     )
 
-    out_ref, dot_ref, gate_score_ref, rstd_x_ref, rstd_k_ref, kk_ref = engram_gate_ref(
+    out_ref, dot_ref, gate_score_ref, rstd_x_ref, rstd_k_ref, kk_ref, x2_sum_ref, k2_sum_ref = engram_gate_ref(
         hidden_states,
         k,
         v,
@@ -399,13 +434,15 @@ def run_test():
         and rstd_k is not None
     )
 
-    rtol, atol = 1e-1, 1e-1
+    rtol, atol = 1e-2, 1e-2
     out_mismatch, out_total, out_ratio = calc_mismatch_count(out_save, out_ref, rtol, atol)
     dot_mismatch, dot_total, dot_ratio = calc_mismatch_count(dot, dot_ref, rtol, atol)
     gate_mismatch, gate_total, gate_ratio = calc_mismatch_count(gate_score, gate_score_ref, rtol, atol)
     rstd_x_mismatch, rstd_x_total, rstd_x_ratio = calc_mismatch_count(rstd_x, rstd_x_ref, rtol, atol)
     rstd_k_mismatch, rstd_k_total, rstd_k_ratio = calc_mismatch_count(rstd_k, rstd_k_ref, rtol, atol)
     kk_mismatch, kk_total, kk_ratio = calc_mismatch_count(kk, kk_ref, rtol, atol)
+    x2_sum_mismatch, x2_sum_total, x2_sum_ratio = calc_mismatch_count(x2_sum, x2_sum_ref, rtol, atol)
+    k2_sum_mismatch, k2_sum_total, k2_sum_ratio = calc_mismatch_count(k2_sum, k2_sum_ref, rtol, atol)
     print(f"=== Mismatch Statistics (rtol={rtol}, atol={atol}) ===")
     print(f"output:      {out_mismatch}/{out_total} ({out_ratio:.2%}) mismatch")
     print(f"dot:         {dot_mismatch}/{dot_total} ({dot_ratio:.2%}) mismatch")
@@ -413,6 +450,30 @@ def run_test():
     print(f"rstd_x:      {rstd_x_mismatch}/{rstd_x_total} ({rstd_x_ratio:.2%}) mismatch")
     print(f"rstd_k:      {rstd_k_mismatch}/{rstd_k_total} ({rstd_k_ratio:.2%}) mismatch")
     print(f"kk_out:      {kk_mismatch}/{kk_total} ({kk_ratio:.2%}) mismatch")
+    print(f"x2_sum:      {x2_sum_mismatch}/{x2_sum_total} ({x2_sum_ratio:.2%}) mismatch")
+    print(f"k2_sum:      {k2_sum_mismatch}/{k2_sum_total} ({k2_sum_ratio:.2%}) mismatch")
+    print("raw_dot kernel:")
+    print(dot)
+    print("raw_dot ref:")
+    print(dot_ref)
+
+    x2_mean = x2_sum / hidden_size + eps
+    x2_mean_ref = x2_sum_ref / hidden_size + eps
+    k2_mean = k2_sum / hidden_size + eps
+    k2_mean_ref = k2_sum_ref / hidden_size + eps
+    print("=== RSTD Debug ===")
+    print_abs_error("x2_mean", x2_mean, x2_mean_ref)
+    print_abs_error("k2_mean", k2_mean, k2_mean_ref)
+    print_abs_error("rstd_x", rstd_x, rstd_x_ref)
+    print_abs_error("rstd_k", rstd_k, rstd_k_ref)
+    print("rstd_x kernel:")
+    print(rstd_x)
+    print("rstd_x ref:")
+    print(rstd_x_ref)
+    print("rstd_k kernel:")
+    print(rstd_k)
+    print("rstd_k ref:")
+    print(rstd_k_ref)
 
     diff_out = calc_diff(out_save, out_ref)
     diff_dot = calc_diff(dot, dot_ref)
@@ -420,6 +481,8 @@ def run_test():
     diff_rstd_x = calc_diff(rstd_x, rstd_x_ref)
     diff_rstd_k = calc_diff(rstd_k, rstd_k_ref)
     diff_kk = calc_diff(kk, kk_ref)
+    diff_x2_sum = calc_diff(x2_sum, x2_sum_ref)
+    diff_k2_sum = calc_diff(k2_sum, k2_sum_ref)
     print("=== Diff Statistics ===")
     print(f"output:      {diff_out:.6e}")
     print(f"dot:         {diff_dot:.6e}")
@@ -427,15 +490,19 @@ def run_test():
     print(f"rstd_x:      {diff_rstd_x:.6e}")
     print(f"rstd_k:      {diff_rstd_k:.6e}")
     print(f"kk_out:      {diff_kk:.6e}")
+    print(f"x2_sum:      {diff_x2_sum:.6e}")
+    print(f"k2_sum:      {diff_k2_sum:.6e}")
     assert diff_out < 1e-2, f"out_save mismatch: {diff_out:.6e}"
     assert diff_dot < 1e-2, f"dot mismatch: {diff_dot:.6e}"
     assert diff_gate < 1e-2, f"gate_score mismatch: {diff_gate:.6e}"
     assert diff_rstd_x < 1e-2, f"rstd_x mismatch: {diff_rstd_x:.6e}"
     assert diff_rstd_k < 1e-2, f"rstd_k mismatch: {diff_rstd_k:.6e}"
     assert diff_kk < 1e-6, f"kk_out mismatch: {diff_kk:.6e}"
+    assert diff_x2_sum < 1e-2, f"x2_sum mismatch: {diff_x2_sum:.6e}"
+    assert diff_k2_sum < 1e-2, f"k2_sum mismatch: {diff_k2_sum:.6e}"
 
     # Correctness: save_for_backward=False
-    out_no_save, dot_n, gate_score_n, rstd_x_n, rstd_k_n, _ = engram_gate_fwd(
+    out_no_save, dot_n, gate_score_n, rstd_x_n, rstd_k_n, _, _, _ = engram_gate_fwd(
         hidden_states,
         k,
         v,
