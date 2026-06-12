@@ -49,6 +49,7 @@ def get_engram_gate_fwd_kernel(
             gate_score: T.Tensor([num_tokens, hc_mult], accum_dtype),
             rstd_x: T.Tensor([num_tokens, hc_mult], accum_dtype),
             rstd_k: T.Tensor([num_tokens, hc_mult], accum_dtype),
+            kk_out: T.Tensor([num_tokens, hc_mult, hidden_size], accum_dtype),
     ):
         with T.Kernel(hc_mult * num_persistent_blocks, is_npu=True) as (cid, _):
             pid_h = cid % hc_mult
@@ -91,101 +92,30 @@ def get_engram_gate_fwd_kernel(
                 T.clear(rstd_x_local)
                 T.clear(gate_score_local)
 
-                for i_b in T.serial(1, num_blk):
-                    phase = i_b % 2
-                    prev_phase = (i_b - 1) % 2
-                    T.copy(
-                        hidden_states[i_s, pid_h, i_b * blk_d: (i_b + 1) * blk_d],
-                        x_smem[i_b * blk_d: (i_b + 1) * blk_d],
-                    )
-                    # 动态phase写入：直接访问对应一维共享内存
-                    if phase == 0:
-                        T.copy(k[i_s, pid_h, i_b * blk_d: (i_b + 1) * blk_d], kv_smem_0[:])
-                    else:
-                        T.copy(k[i_s, pid_h, i_b * blk_d: (i_b + 1) * blk_d], kv_smem_1[:])
+                x_vec = T.alloc_shared((hidden_size,), accum_dtype)
+                k_vec = T.alloc_shared((hidden_size,), accum_dtype)
+                w_vec = T.alloc_shared((hidden_size,), accum_dtype)
+                tmp_vec = T.alloc_fragment((hidden_size,), accum_dtype)
 
-                    for i_sub in T.serial(sub_blks):
-                        sub_base = (i_b - 1) * blk_d + i_sub * reduce_blk
-                        for tid in T.serial(threads):
-                            for i_k in T.Parallel(vec_size):
-                                x_local_1[i_k] = x_smem[sub_base + tid * vec_size + i_k]
-                                # 动态(num_blk-1)%2读取：直接访问对应一维共享内存
-                                if prev_phase == 0:
-                                    k_local_1[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
-                                else:
-                                    k_local_1[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
-                            T.copy(weight_fused[pid_h, sub_base + tid * vec_size: sub_base + tid * vec_size + vec_size ], w_local_1)
-                            T.vmul(x_local_1, x_local_1, tmp_local)
-                            T.reduce(
-                                tmp_local,
-                                rstd_x_local,
-                                dims=0,
-                                reduce_mode="sum",
-                                clear=False,
-                            )
-                            T.vmul(k_local_1, k_local_1, tmp_local)
-                            T.reduce(
-                                tmp_local,
-                                rstd_k_local,
-                                dims=0,
-                                reduce_mode="sum",
-                                clear=False,
-                            )
-                            T.vmul(x_local_1, w_local_1, tmp_local)
-                            T.vmul(tmp_local, k_local_1, tmp_local)
-                            T.reduce(
-                                tmp_local,
-                                gate_score_local,
-                                dims=0,
-                                reduce_mode="sum",
-                                clear=False,
-                            )
-                # Prefetch v[0] into freed kv_smem bank
-                # T.copy(v[i_s, 0:blk_d], kv_smem[v_start_phase, :])  # 完全保留注释
+                T.copy(hidden_states[i_s, pid_h, :], x_vec)
+                T.copy(k[i_s, pid_h, :], k_vec)
+                T.copy(weight_fused[pid_h, :], w_vec)
+                
 
-                for i_sub in T.serial(sub_blks):
-                    sub_base = (num_blk - 1) * blk_d + i_sub * reduce_blk
-                    for tid in T.serial(threads):
-                        for i_k in T.Parallel(vec_size):
-                            x_local_2[i_k] = x_smem[sub_base + tid * vec_size + i_k]
-                            # 动态(num_blk-1)%2读取：直接访问对应一维共享内存
-                            if (num_blk - 1) % 2 == 0:
-                                k_local_2[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
-                            else:
-                                k_local_2[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
-                        T.copy(weight_fused[pid_h, sub_base + tid * vec_size: sub_base + tid * vec_size + vec_size ], w_local_2)
-                        T.vmul(x_local_2, x_local_2, tmp_local)
-                        T.reduce(
-                            tmp_local,
-                            rstd_x_local,
-                            dims=0,
-                            reduce_mode="sum",
-                            clear=False,
-                        )
-                        T.vmul(k_local_2, k_local_2, tmp_local)
-                        T.reduce(
-                            tmp_local,
-                            rstd_k_local,
-                            dims=0,
-                            reduce_mode="sum",
-                            clear=False,
-                        )
-                        T.vmul(x_local_2, w_local_2, tmp_local)
-                        T.vmul(tmp_local, k_local_2, tmp_local)
-                        T.reduce(
-                            tmp_local,
-                            gate_score_local,
-                            dims=0,
-                            reduce_mode="sum",
-                            clear=False,
-                        )
+                T.vmul(x_vec, x_vec, tmp_vec)
+                T.reduce(tmp_vec, rstd_x_reducer, dims=0, reduce_mode='sum', clear=True)
 
-                # Prefetch v[1]
-                # T.copy(v[i_s, blk_d:2 * blk_d], kv_smem[1 - v_start_phase, :])  # 完全保留注释
+                T.vmul(k_vec, k_vec, tmp_vec)
+                T.copy(tmp_vec, kk_out[i_s, pid_h, :])
+                T.reduce(tmp_vec, rstd_k_reducer, dims=0, reduce_mode='sum', clear=True)
 
-                rstd_k_reducer[0] = rstd_k_local[0]
-                rstd_x_reducer[0] = rstd_x_local[0]
-                gate_score_reducer[0] = gate_score_local[0]
+                T.vmul(x_vec, k_vec, tmp_vec)
+                T.vmul(tmp_vec, w_vec, tmp_vec)
+                T.reduce(tmp_vec, gate_score_reducer, dims=0, reduce_mode='sum', clear=True)
+
+                # rstd_k_reducer[0] = rstd_k_local[0]
+                # rstd_x_reducer[0] = rstd_x_local[0]
+                # gate_score_reducer[0] = gate_score_local[0]
 
                 # rstd_x_reducer[0] = T.rsqrt(rstd_x_reducer[0] / hidden_size + eps)
                 rstd_x_reducer[0] = rstd_x_reducer[0] / hidden_size + eps
@@ -233,42 +163,12 @@ def get_engram_gate_fwd_kernel(
                 else:
                     T.copy(v[i_s, 0:blk_d], kv_smem_1[:])
 
-                if num_blk > 1:
-                    if (1 - v_start_phase) == 0:
-                        T.copy(v[i_s, blk_d: 2 * blk_d], kv_smem_0[:])
-                    else:
-                        T.copy(v[i_s, blk_d: 2 * blk_d], kv_smem_1[:])
-
                 # === Pass 2: Output — x from smem, v from kv_smem (tiles 0,1 already prefetched) ===
-                for i_b in T.serial(num_blk):
-                    tile_phase = (v_start_phase + i_b) % 2
-                    for i_sub in T.serial(sub_blks):
-                        sub_base = i_b * blk_d + i_sub * reduce_blk
-                        for tid in T.serial(threads):
-                            for i_k in T.Parallel(vec_size):
-                                tmp_val[i_k] = x_smem[sub_base + tid * vec_size + i_k]
-                                # 动态tile_phase读取v：直接访问对应一维共享内存
-                                if tile_phase == 0:
-                                    v_local[i_k] = kv_smem_0[i_sub * reduce_blk + tid * vec_size + i_k]
-                                else:
-                                    v_local[i_k] = kv_smem_1[i_sub * reduce_blk + tid * vec_size + i_k]
-                            T.vmul(v_local, gate_score_reducer, v_local)
-                            T.vadd(tmp_val, v_local, tmp_val)
-                            T.copy(tmp_val, output[i_s, pid_h, sub_base + tid * vec_size: sub_base + tid * vec_size + vec_size])
 
-                    # Prefetch v[i_b+2] into freed kv_smem bank
-                    if i_b + 2 < num_blk:
-                        # 动态tile_phase写入v：直接访问对应一维共享内存
-                        if tile_phase == 0:
-                            T.copy(
-                                v[i_s, (i_b + 2) * blk_d: (i_b + 3) * blk_d],
-                                kv_smem_0[:],
-                            )
-                        else:
-                            T.copy(
-                                v[i_s, (i_b + 2) * blk_d: (i_b + 3) * blk_d],
-                                kv_smem_1[:],
-                            )
+                T.copy(v[i_s, :], tmp_vec)
+                T.vmul(tmp_vec, gate_score_reducer, tmp_vec)
+                T.vadd(tmp_vec, x_vec, tmp_vec)
+                T.copy(tmp_vec, output[i_s, pid_h, :])
 
     return engram_gate_fwd_kernel
 
@@ -284,7 +184,7 @@ def engram_gate_ref(
     save_for_backward: bool = False,
 ) -> (
     torch.Tensor
-    | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    | tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
 ):
     """Pure PyTorch reference implementation of engram gate (vectorized, supports autograd).
 
@@ -309,6 +209,7 @@ def engram_gate_ref(
 
     x = hidden_states.float()
     k_f = k.float()
+    kk = k_f.pow(2)
     wh = weight_hidden.float().unsqueeze(0)
     we = weight_embed.float().unsqueeze(0)
 
@@ -327,7 +228,7 @@ def engram_gate_ref(
     output = output.bfloat16()
 
     if save_for_backward:
-        return output, raw_dot, gate_score, rstd_x, rstd_k
+        return output, raw_dot, gate_score, rstd_x, rstd_k, kk
     return output
 
 
@@ -345,6 +246,7 @@ def engram_gate_fwd(
     torch.Tensor | None,
     torch.Tensor | None,
     torch.Tensor | None,
+    torch.Tensor,
 ]:
     num_tokens, hc_mult, hidden_size = hidden_states.shape
     scalar = hidden_size**-0.5
@@ -367,12 +269,18 @@ def engram_gate_fwd(
         rstd_k = torch.empty(
             (num_tokens, hc_mult), dtype=torch.float32, device=hidden_states.device
         )
+        kk = torch.empty(
+            (num_tokens, hc_mult, hidden_size), dtype=torch.float32, device=hidden_states.device
+        )
     else:
         dot = gate_score = rstd_x = rstd_k = None
+        kk = torch.empty(
+            (num_tokens, hc_mult, hidden_size), dtype=torch.float32, device=hidden_states.device
+        )
 
-    kernel(hidden_states, k, v, weight_fused, output, dot, gate_score, rstd_x, rstd_k)
+    kernel(hidden_states, k, v, weight_fused, output, dot, gate_score, rstd_x, rstd_k, kk)
 
-    return output, dot, gate_score, rstd_x, rstd_k
+    return output, dot, gate_score, rstd_x, rstd_k, kk
 
 
 def calc_diff(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -380,6 +288,17 @@ def calc_diff(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     denominator = (x * x + y * y).sum()
     sim = 2 * (x * y).sum() / denominator
     return 1 - sim if denominator != 0 else 0
+
+
+def calc_mismatch_count(x: torch.Tensor, y: torch.Tensor, rtol: float = 1e-1, atol: float = 1e-1) -> tuple[
+    int, int, float
+]:
+    x, y = x.double(), y.double()
+    mask = ~torch.isclose(x, y, rtol=rtol, atol=atol)
+    mismatch_count = mask.sum().item()
+    total_count = x.numel()
+    mismatch_ratio = mismatch_count / total_count if total_count > 0 else 0.0
+    return mismatch_count, total_count, mismatch_ratio
 
 
 def assert_equal(
@@ -458,11 +377,11 @@ def run_test():
 
     weight_fused = (weight_hidden.float() * weight_embed.float()).contiguous()
 
-    out_save, dot, gate_score, rstd_x, rstd_k = engram_gate_fwd(
+    out_save, dot, gate_score, rstd_x, rstd_k, kk = engram_gate_fwd(
         hidden_states, k, v, weight_fused, eps, clamp_value, save_for_backward=True
     )
 
-    out_ref, dot_ref, gate_score_ref, rstd_x_ref, rstd_k_ref = engram_gate_ref(
+    out_ref, dot_ref, gate_score_ref, rstd_x_ref, rstd_k_ref, kk_ref = engram_gate_ref(
         hidden_states,
         k,
         v,
@@ -479,19 +398,44 @@ def run_test():
         and rstd_x is not None
         and rstd_k is not None
     )
+
+    rtol, atol = 1e-1, 1e-1
+    out_mismatch, out_total, out_ratio = calc_mismatch_count(out_save, out_ref, rtol, atol)
+    dot_mismatch, dot_total, dot_ratio = calc_mismatch_count(dot, dot_ref, rtol, atol)
+    gate_mismatch, gate_total, gate_ratio = calc_mismatch_count(gate_score, gate_score_ref, rtol, atol)
+    rstd_x_mismatch, rstd_x_total, rstd_x_ratio = calc_mismatch_count(rstd_x, rstd_x_ref, rtol, atol)
+    rstd_k_mismatch, rstd_k_total, rstd_k_ratio = calc_mismatch_count(rstd_k, rstd_k_ref, rtol, atol)
+    kk_mismatch, kk_total, kk_ratio = calc_mismatch_count(kk, kk_ref, rtol, atol)
+    print(f"=== Mismatch Statistics (rtol={rtol}, atol={atol}) ===")
+    print(f"output:      {out_mismatch}/{out_total} ({out_ratio:.2%}) mismatch")
+    print(f"dot:         {dot_mismatch}/{dot_total} ({dot_ratio:.2%}) mismatch")
+    print(f"gate_score:  {gate_mismatch}/{gate_total} ({gate_ratio:.2%}) mismatch")
+    print(f"rstd_x:      {rstd_x_mismatch}/{rstd_x_total} ({rstd_x_ratio:.2%}) mismatch")
+    print(f"rstd_k:      {rstd_k_mismatch}/{rstd_k_total} ({rstd_k_ratio:.2%}) mismatch")
+    print(f"kk_out:      {kk_mismatch}/{kk_total} ({kk_ratio:.2%}) mismatch")
+
     diff_out = calc_diff(out_save, out_ref)
-    assert diff_out < 1e-2, f"out_save mismatch: {diff_out:.6e}"
     diff_dot = calc_diff(dot, dot_ref)
-    assert diff_dot < 1e-2, f"dot mismatch: {diff_dot:.6e}"
     diff_gate = calc_diff(gate_score, gate_score_ref)
-    assert diff_gate < 1e-2, f"gate_score mismatch: {diff_gate:.6e}"
     diff_rstd_x = calc_diff(rstd_x, rstd_x_ref)
-    assert diff_rstd_x < 1e-2, f"rstd_x mismatch: {diff_rstd_x:.6e}"
     diff_rstd_k = calc_diff(rstd_k, rstd_k_ref)
+    diff_kk = calc_diff(kk, kk_ref)
+    print("=== Diff Statistics ===")
+    print(f"output:      {diff_out:.6e}")
+    print(f"dot:         {diff_dot:.6e}")
+    print(f"gate_score:  {diff_gate:.6e}")
+    print(f"rstd_x:      {diff_rstd_x:.6e}")
+    print(f"rstd_k:      {diff_rstd_k:.6e}")
+    print(f"kk_out:      {diff_kk:.6e}")
+    assert diff_out < 1e-2, f"out_save mismatch: {diff_out:.6e}"
+    assert diff_dot < 1e-2, f"dot mismatch: {diff_dot:.6e}"
+    assert diff_gate < 1e-2, f"gate_score mismatch: {diff_gate:.6e}"
+    assert diff_rstd_x < 1e-2, f"rstd_x mismatch: {diff_rstd_x:.6e}"
     assert diff_rstd_k < 1e-2, f"rstd_k mismatch: {diff_rstd_k:.6e}"
+    assert diff_kk < 1e-6, f"kk_out mismatch: {diff_kk:.6e}"
 
     # Correctness: save_for_backward=False
-    out_no_save, dot_n, gate_score_n, rstd_x_n, rstd_k_n = engram_gate_fwd(
+    out_no_save, dot_n, gate_score_n, rstd_x_n, rstd_k_n, _ = engram_gate_fwd(
         hidden_states,
         k,
         v,
@@ -503,7 +447,10 @@ def run_test():
     assert (
         dot_n is None and gate_score_n is None and rstd_x_n is None and rstd_k_n is None
     )
+    out_no_save_mismatch, out_no_save_total, out_no_save_ratio = calc_mismatch_count(out_no_save, out_ref, rtol, atol)
+    print(f"out_no_save: {out_no_save_mismatch}/{out_no_save_total} ({out_no_save_ratio:.2%}) mismatch")
     diff_out = calc_diff(out_no_save, out_ref)
+    print(f"out_no_save diff: {diff_out:.6e}")
     assert diff_out < 1e-2, f"out_no_save mismatch: {diff_out:.6e}"
     assert_equal(out_no_save, out_save)
     print("All check pass!")
