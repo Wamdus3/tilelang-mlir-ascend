@@ -93,6 +93,13 @@ public:
   Array<Range> src_range, dst_range;
 };
 
+class AscendCopyBack : public AscendCopy {
+public:
+  using AscendCopy::AscendCopy;
+
+  static const Op &Get();
+};
+
 class NpuirBinaryOperator : public Operator {
 public:
   const NpuirOperand &Src0() const { return src0_; }

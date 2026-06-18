@@ -83,14 +83,14 @@ def sparse_attn_kernel(
                             cur_idx = idxs[i]
                             if cur_idx != -1:
                                 valid_mask_block[i] = 1.0
-                                T.copy(
+                                T.copy_back(
                                     KV[by, cur_idx, 0], kv_gather[i, 0], size=[1, dim]
                                 )
                         T.copy(
                             valid_mask_block,
                             ValidMaskBuffer[by, bx, k * block_top_k_vec],
                         )
-                        T.copy(
+                        T.copy_back(
                             kv_gather, SparseKVBuffer[by, bx, k * block_top_k_vec, 0]
                         )
 

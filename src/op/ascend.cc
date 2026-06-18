@@ -626,6 +626,11 @@ TIR_REGISTER_TL_OP(AscendCopy, ascend_copy)
     .set_attr<TCallEffectKind>("TCallEffectKind",
                                Integer(CallEffectKind::kOpaque));
 
+TIR_REGISTER_TL_OP(AscendCopyBack, copy_back)
+    .set_num_inputs(3)
+    .set_attr<TCallEffectKind>("TCallEffectKind",
+                               Integer(CallEffectKind::kOpaque));
+
 TIR_REGISTER_TL_OP(NpuirDot, npuir_dot)
     .set_num_inputs(6)
     .set_attr<TCallEffectKind>("TCallEffectKind",

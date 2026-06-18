@@ -100,6 +100,9 @@ def copy(
     dst: Union[tir.Buffer, tir.BufferLoad, tir.BufferRegion],
     coalesced_width: Optional[int] = None,
     size: Optional[List] = None,
+    *,
+    _op_name: str = "tl.copy",
+    _api_name: str = "T.copy",
 ):
     """Copy data between memory regions.
 
@@ -139,7 +142,7 @@ def copy(
     has_explicit_size = size is not None and len(size) > 0
     if has_explicit_size and (_is_slice(src) or _is_slice(dst)):
         raise ValueError(
-            "T.copy: cannot use both slice syntax and the size parameter. "
+            f"{_api_name}: cannot use both slice syntax and the size parameter. "
         )
 
     src_extent = get_extent(src)
@@ -155,7 +158,7 @@ def copy(
         # BufferLoad only carries a starting point, so when size=... is absent
         # it has to borrow extents from the opposite operand.
         assert peer_extent is not None, (
-            "T.copy cannot deduce copy extents from two BufferLoad operands; "
+            f"{_api_name} cannot deduce copy extents from two BufferLoad operands; "
             "use slice syntax on one side or pass size=[...]."
         )
         return list(peer_extent)
@@ -202,10 +205,32 @@ def copy(
     dst = _to_region(dst, "w", src_extent, _is_slice(src))
     if coalesced_width is not None:
         return tir.call_intrin(
-            "handle", tir.op.Op.get("tl.copy"), src, dst, coalesced_width
+            "handle", tir.op.Op.get(_op_name), src, dst, coalesced_width
         )
     else:
-        return tir.call_intrin("handle", tir.op.Op.get("tl.copy"), src, dst)
+        return tir.call_intrin("handle", tir.op.Op.get(_op_name), src, dst)
+
+
+def copy_back(
+    src: Union[tir.Buffer, tir.BufferLoad, tir.BufferRegion],
+    dst: Union[tir.Buffer, tir.BufferLoad, tir.BufferRegion],
+    coalesced_width: Optional[int] = None,
+    size: Optional[List] = None,
+):
+    """Copy a gather-like GM region back to GM through an internal UB staging buffer.
+
+    This is intended for no-compute gather-back paths such as dynamic-index GM row
+    loads that are immediately written to another GM region.  It deliberately has
+    a separate op name from T.copy so generic copy lowering remains unchanged.
+    """
+    return copy(
+        src,
+        dst,
+        coalesced_width=coalesced_width,
+        size=size,
+        _op_name="tl.copy_back",
+        _api_name="T.copy_back",
+    )
 
 
 def c2d_im2col(

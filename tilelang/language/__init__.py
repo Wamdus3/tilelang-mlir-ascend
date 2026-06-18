@@ -46,7 +46,7 @@ from .allocate import (
     alloc_L1,  # noqa: F401
     alloc_ub,  # noqa: F401
 )
-from .copy import copy, c2d_im2col  # noqa: F401, F811
+from .copy import copy, copy_back, c2d_im2col  # noqa: F401, F811
 from .reduce import (
     reduce,  # noqa: F401
     reduce_max,  # noqa: F401

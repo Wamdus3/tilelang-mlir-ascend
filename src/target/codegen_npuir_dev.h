@@ -59,7 +59,8 @@ using namespace mlir;
 namespace tvm {
 namespace tl {
 struct AscendCopy;
-}
+struct AscendCopyBack;
+} // namespace tl
 namespace codegen {
 
 // All VisitExpr inherited from ExprFunctor take PrimExpr as an argument and
@@ -239,6 +240,7 @@ private:
   template <typename T> void SyncBlockCodegen(const T &sync_op);
   void CallExternCodegen(const CallNode *op);
   void AscendCopyCodegen(const CallNode *op);
+  void CopyBackCodegen(const CallNode *op);
   void Nd2NzCodegen(const CallNode *op);
   void Nz2NdCodegen(const CallNode *op);
   void VexpCodegen(const CallNode *op);
@@ -349,10 +351,16 @@ private:
                               mlir::Value src, mlir::Value dst,
                               const SliceRange &srcR, const SliceRange &dstR,
                               mlir::Location loc);
+  struct CopyBackTensorBacking {
+    mlir::Value tensor_value;
+    mlir::Value memref_value;
+  };
   // Small utilities
   template <typename RangeT> SliceRange MakeSliceRange(const RangeT &range);
   mlir::Value CreateStaticLocalUB(llvm::ArrayRef<int64_t> shape,
                                   mlir::Type elem_type, mlir::Location loc);
+  void EnsureCopyBackTensorBacking(const VarNode *var_node, mlir::Value tensor,
+                                   mlir::Location loc);
   bool IsStaticOneOFR(mlir::OpFoldResult ofr) const;
   // Collapse static-1 dims with an optional rank limit. When maxRank < 0,
   // removes all static-1 dims.
@@ -378,6 +386,18 @@ private:
   llvm::SmallVector<int64_t> ComputeUBAllocShapeFromDstRange(
       mlir::RankedTensorType dst_tensor_type_ori,
       llvm::ArrayRef<mlir::OpFoldResult> dstR_sizes);
+  void EmitCopyBackMemrefToMemref(const tvm::tl::AscendCopyBack &npuirop,
+                                  mlir::Value src, mlir::Value dst,
+                                  const SliceRange &srcR,
+                                  const SliceRange &dstR, mlir::Location loc);
+  void EmitCopyBackMemrefToTensor(const tvm::tl::AscendCopyBack &npuirop,
+                                  mlir::Value src, mlir::Value dst,
+                                  const SliceRange &srcR,
+                                  const SliceRange &dstR, mlir::Location loc);
+  void EmitCopyBackTensorToMemref(const tvm::tl::AscendCopyBack &npuirop,
+                                  mlir::Value src, mlir::Value dst,
+                                  const SliceRange &srcR,
+                                  const SliceRange &dstR, mlir::Location loc);
 
   NPU_CORETYPE func_coretype;
 
@@ -390,6 +410,8 @@ private:
 
   // Keeps name of current function
   std::string current_function_name;
+  std::unordered_map<const VarNode *, CopyBackTensorBacking>
+      copy_back_tensor_backing_memrefs_;
 
 private:
   class LoopCarriedVarCollector : public tir::StmtExprVisitor {
