@@ -1558,9 +1558,12 @@ void CodeGenTileLangNPUIRDEV::EnsureCopyBackTensorBacking(
     backing = CreateStaticLocalUB(shape, tensorTy.getElementType(), loc);
   }
 
-  auto matOp = builder.create<mlir::bufferization::MaterializeInDestinationOp>(
-      loc, tensor, backing);
-  matOp.setWritable(true);
+  if (!tensor.getDefiningOp<mlir::tensor::EmptyOp>()) {
+    auto matOp =
+        builder.create<mlir::bufferization::MaterializeInDestinationOp>(
+            loc, tensor, backing);
+    matOp.setWritable(true);
+  }
   copy_back_tensor_backing_memrefs_[var_node] = {tensor, backing};
 }
 
