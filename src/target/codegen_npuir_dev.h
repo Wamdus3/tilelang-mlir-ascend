@@ -219,6 +219,10 @@ protected:
   void SetVarValue(const VarNode *v, const mlir::Value &value);
   void SetVarValue(const CallNode *region_node, const mlir::Value &value);
   void SetVarValue(const Buffer &buffer_data, const mlir::Value &value);
+  void SetVarValueFromRegionResult(const VarNode *v,
+                                   mlir::Value expected_yield_value,
+                                   mlir::Value result_value,
+                                   bool update_copy_back_backing);
   // Add variable value layer
   void AddVarLayer();
   // Delete variable value layer
@@ -359,8 +363,20 @@ private:
   template <typename RangeT> SliceRange MakeSliceRange(const RangeT &range);
   mlir::Value CreateStaticLocalUB(llvm::ArrayRef<int64_t> shape,
                                   mlir::Type elem_type, mlir::Location loc);
+  llvm::SmallVector<int64_t>
+  GetStaticCopyShape(llvm::ArrayRef<int64_t> projected_shape,
+                     const char *op_name) const;
+  mlir::Value
+  CreateStaticLocalUBView(llvm::ArrayRef<int64_t> ub_shape,
+                          llvm::ArrayRef<mlir::OpFoldResult> copy_sizes,
+                          mlir::Type elem_type, mlir::Location loc);
+  void MaterializeTensorIntoMemref(mlir::Value tensor, mlir::Value memref,
+                                   mlir::Location loc);
   void EnsureCopyBackTensorBacking(const VarNode *var_node, mlir::Value tensor,
                                    mlir::Location loc);
+  void PrepareCopyBackTensorBackings(
+      const tir::Stmt &stmt, llvm::ArrayRef<const VarNode *> carried_vars,
+      std::vector<bool> *copy_back_carried_vars, mlir::Location loc);
   bool IsStaticOneOFR(mlir::OpFoldResult ofr) const;
   // Collapse static-1 dims with an optional rank limit. When maxRank < 0,
   // removes all static-1 dims.

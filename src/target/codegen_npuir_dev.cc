@@ -93,6 +93,10 @@ using namespace mlir;
 namespace tvm {
 namespace codegen {
 
+static bool
+OpFoldResultsEqualStaticShape(llvm::ArrayRef<mlir::OpFoldResult> sizes,
+                              llvm::ArrayRef<int64_t> staticShape);
+
 constexpr uint8_t FLAG_ID_BITS = 64;
 
 static std::map<NPU_CORETYPE, std::string> NPU_CORETYPE_STR{
@@ -499,15 +503,8 @@ void CodeGenTileLangNPUIRDEV::VisitStmt_(const tir::ForNode *op) {
   // Traverse the body of the for loop body, and generate
   // region iter args
   CollectVarsUsedInBodyButDefinedOutside(op, loop_carried_vars);
-  CopyBackDstCollector copy_back_dst_collector(this->vmap);
-  copy_back_dst_collector.VisitStmt(op->body);
-  for (const auto *var_node : copy_back_dst_collector.dst_vars) {
-    mlir::Value value = GetVarValue(var_node);
-    if (value != mlir::Value{} &&
-        value.getType().isa<mlir::RankedTensorType>()) {
-      EnsureCopyBackTensorBacking(var_node, value, builder.getUnknownLoc());
-    }
-  }
+  PrepareCopyBackTensorBackings(op->body, loop_carried_vars, nullptr,
+                                builder.getUnknownLoc());
   for (const auto *var_node : loop_carried_vars) {
     auto it = GetVarValue(var_node);
     ICHECK(it != mlir::Value{});
@@ -532,17 +529,7 @@ void CodeGenTileLangNPUIRDEV::VisitStmt_(const tir::ForNode *op) {
   SetVarValue(loop_var.get(), forOp.getInductionVar());
   int iter = 0;
   for (const auto *var_node : loop_carried_vars) {
-    mlir::Value init = init_values[iter];
-    mlir::Value iter_arg = forOp.getRegionIterArg(iter++);
-    auto backing_it = copy_back_tensor_backing_memrefs_.find(var_node);
-    if (backing_it != copy_back_tensor_backing_memrefs_.end()) {
-      if (backing_it->second.tensor_value == init) {
-        backing_it->second.tensor_value = iter_arg;
-      } else {
-        copy_back_tensor_backing_memrefs_.erase(backing_it);
-      }
-    }
-    SetVarValue(var_node, iter_arg);
+    SetVarValue(var_node, forOp.getRegionIterArg(iter++));
   }
 
   // Traverse the body of the for loop
@@ -567,15 +554,8 @@ void CodeGenTileLangNPUIRDEV::VisitStmt_(const tir::ForNode *op) {
   for (const auto *var_node : loop_carried_vars) {
     mlir::Value yielded = yield_values[iter];
     mlir::Value result = forOp.getResult(iter++);
-    auto backing_it = copy_back_tensor_backing_memrefs_.find(var_node);
-    if (backing_it != copy_back_tensor_backing_memrefs_.end()) {
-      if (backing_it->second.tensor_value == yielded) {
-        backing_it->second.tensor_value = result;
-      } else {
-        copy_back_tensor_backing_memrefs_.erase(backing_it);
-      }
-    }
-    SetVarValue(var_node, result);
+    SetVarValueFromRegionResult(var_node, yielded, result,
+                                /*update_copy_back_backing=*/false);
   }
 }
 
@@ -597,17 +577,14 @@ void CodeGenTileLangNPUIRDEV::VisitStmt_(const tir::IfThenElseNode *op) {
   // Traverse the then_case and else_case of the IrThenElseNode
   // and generate region iter args
   CollectVarsUsedInBodyButDefinedOutside(op, if_carried_vars);
-  CopyBackDstCollector copy_back_dst_collector(this->vmap);
-  copy_back_dst_collector.VisitStmt(op->then_case);
+  std::vector<bool> copy_back_carried_vars(if_carried_vars.size(), false);
+  PrepareCopyBackTensorBackings(op->then_case, if_carried_vars,
+                                &copy_back_carried_vars,
+                                builder.getUnknownLoc());
   if (op->else_case) {
-    copy_back_dst_collector.VisitStmt(op->else_case.value());
-  }
-  for (const auto *var_node : copy_back_dst_collector.dst_vars) {
-    mlir::Value value = GetVarValue(var_node);
-    if (value != mlir::Value{} &&
-        value.getType().isa<mlir::RankedTensorType>()) {
-      EnsureCopyBackTensorBacking(var_node, value, builder.getUnknownLoc());
-    }
+    PrepareCopyBackTensorBackings(op->else_case.value(), if_carried_vars,
+                                  &copy_back_carried_vars,
+                                  builder.getUnknownLoc());
   }
   for (const auto *var_node : if_carried_vars) {
     auto it = GetVarValue(var_node);
@@ -680,16 +657,9 @@ void CodeGenTileLangNPUIRDEV::VisitStmt_(const tir::IfThenElseNode *op) {
   DeleteVarLayer();
   int iter = 0;
   for (const auto *var_node : if_carried_vars) {
-    mlir::Value result = ifOp.getResult(iter++);
-    auto backing_it = copy_back_tensor_backing_memrefs_.find(var_node);
-    if (backing_it != copy_back_tensor_backing_memrefs_.end()) {
-      if (copy_back_dst_collector.dst_vars.count(var_node) != 0) {
-        backing_it->second.tensor_value = result;
-      } else {
-        copy_back_tensor_backing_memrefs_.erase(backing_it);
-      }
-    }
-    SetVarValue(var_node, result);
+    bool update_copy_back_backing = copy_back_carried_vars[iter];
+    SetVarValueFromRegionResult(var_node, mlir::Value{}, ifOp.getResult(iter++),
+                                update_copy_back_backing);
   }
 }
 
@@ -1523,6 +1493,42 @@ mlir::Value CodeGenTileLangNPUIRDEV::CreateStaticLocalUB(
   return allocOp.getResult();
 }
 
+llvm::SmallVector<int64_t> CodeGenTileLangNPUIRDEV::GetStaticCopyShape(
+    llvm::ArrayRef<int64_t> projected_shape, const char *op_name) const {
+  llvm::SmallVector<int64_t> shape;
+  shape.reserve(projected_shape.size());
+  for (int64_t d : projected_shape) {
+    ICHECK(!mlir::ShapedType::isDynamic(d))
+        << op_name << " does not support dynamic UB staging shape yet.";
+    shape.push_back(d);
+  }
+  if (shape.empty()) {
+    shape.push_back(1);
+  }
+  return shape;
+}
+
+mlir::Value CodeGenTileLangNPUIRDEV::CreateStaticLocalUBView(
+    llvm::ArrayRef<int64_t> ub_shape,
+    llvm::ArrayRef<mlir::OpFoldResult> copy_sizes, mlir::Type elem_type,
+    mlir::Location loc) {
+  mlir::Value ub = CreateStaticLocalUB(ub_shape, elem_type, loc);
+  auto ubTy = ub.getType().cast<mlir::MemRefType>();
+  if (OpFoldResultsEqualStaticShape(copy_sizes, ub_shape)) {
+    return ub;
+  }
+  ICHECK(static_cast<int64_t>(copy_sizes.size()) == ubTy.getRank());
+  return CreateSameRankDynamicSubview(ub, copy_sizes, loc);
+}
+
+void CodeGenTileLangNPUIRDEV::MaterializeTensorIntoMemref(mlir::Value tensor,
+                                                          mlir::Value memref,
+                                                          mlir::Location loc) {
+  auto matOp = builder.create<mlir::bufferization::MaterializeInDestinationOp>(
+      loc, tensor, memref);
+  matOp.setWritable(true);
+}
+
 void CodeGenTileLangNPUIRDEV::EnsureCopyBackTensorBacking(
     const VarNode *var_node, mlir::Value tensor, mlir::Location loc) {
   if (!tensor.getType().isa<mlir::RankedTensorType>()) {
@@ -1559,12 +1565,32 @@ void CodeGenTileLangNPUIRDEV::EnsureCopyBackTensorBacking(
   }
 
   if (!tensor.getDefiningOp<mlir::tensor::EmptyOp>()) {
-    auto matOp =
-        builder.create<mlir::bufferization::MaterializeInDestinationOp>(
-            loc, tensor, backing);
-    matOp.setWritable(true);
+    MaterializeTensorIntoMemref(tensor, backing, loc);
   }
   copy_back_tensor_backing_memrefs_[var_node] = {tensor, backing};
+}
+
+void CodeGenTileLangNPUIRDEV::PrepareCopyBackTensorBackings(
+    const tir::Stmt &stmt, llvm::ArrayRef<const VarNode *> carried_vars,
+    std::vector<bool> *copy_back_carried_vars, mlir::Location loc) {
+  CopyBackDstCollector copy_back_dst_collector(this->vmap);
+  copy_back_dst_collector.VisitStmt(stmt);
+  for (const auto *var_node : copy_back_dst_collector.dst_vars) {
+    mlir::Value value = GetVarValue(var_node);
+    if (value != mlir::Value{} &&
+        value.getType().isa<mlir::RankedTensorType>()) {
+      EnsureCopyBackTensorBacking(var_node, value, loc);
+    }
+  }
+  if (copy_back_carried_vars == nullptr) {
+    return;
+  }
+  ICHECK(copy_back_carried_vars->size() == carried_vars.size());
+  for (size_t i = 0; i < carried_vars.size(); ++i) {
+    if (copy_back_dst_collector.dst_vars.count(carried_vars[i]) != 0) {
+      (*copy_back_carried_vars)[i] = true;
+    }
+  }
 }
 
 // Returns true if an OpFoldResult is a compile-time constant integer equal
@@ -1954,10 +1980,7 @@ void CodeGenTileLangNPUIRDEV::EmitCopyTensorToMemref(
       OpFoldResultsEqualStaticShape(dstR.sizes, dstTy.getShape()) &&
       srcTy.getShape() == dstTy.getShape()) {
     mlir::Value casted = CreateCastIfTypeMismatch(src, dst);
-    auto matOp =
-        builder.create<mlir::bufferization::MaterializeInDestinationOp>(
-            loc, casted, dst);
-    matOp.setWritable(true);
+    MaterializeTensorIntoMemref(casted, dst, loc);
     return;
   }
 
@@ -1983,9 +2006,7 @@ void CodeGenTileLangNPUIRDEV::EmitCopyTensorToMemref(
       dst, dstR.offs, dstR.sizes, dstR.strides, copy_projected, loc);
 
   // 5) Materialize directly (no reshape needed - shapes match!)
-  auto matOp = builder.create<mlir::bufferization::MaterializeInDestinationOp>(
-      loc, src_slice, dst_view);
-  matOp.setWritable(true);
+  MaterializeTensorIntoMemref(src_slice, dst_view, loc);
 }
 
 void CodeGenTileLangNPUIRDEV::EmitCopyTensorToTensor(
@@ -2037,28 +2058,14 @@ void CodeGenTileLangNPUIRDEV::EmitCopyBackMemrefToMemref(
   llvm::ArrayRef<mlir::OpFoldResult> copy_sizes = srcC.sizes;
   llvm::ArrayRef<int64_t> copy_projected = srcC.projected;
 
-  llvm::SmallVector<int64_t> ub_shape;
-  ub_shape.reserve(copy_projected.size());
-  for (int64_t d : copy_projected) {
-    ICHECK(!mlir::ShapedType::isDynamic(d))
-        << "T.copy_back does not support dynamic UB staging shape yet.";
-    ub_shape.push_back(d);
-  }
-  if (ub_shape.empty()) {
-    ub_shape.push_back(1);
-  }
-
   mlir::Value src_view = CreateRankReducedSubviewFromBaseRank(
       src, srcR.offs, srcR.sizes, srcR.strides, copy_projected, loc);
   mlir::Value dst_view = CreateRankReducedSubviewFromBaseRank(
       dst, dstR.offs, dstR.sizes, dstR.strides, copy_projected, loc);
-  mlir::Value ub = CreateStaticLocalUB(ub_shape, srcTy.getElementType(), loc);
-  mlir::Value ub_view = ub;
-  auto ubTy = ub.getType().cast<mlir::MemRefType>();
-  if (!OpFoldResultsEqualStaticShape(copy_sizes, ub_shape)) {
-    ICHECK(static_cast<int64_t>(copy_sizes.size()) == ubTy.getRank());
-    ub_view = CreateSameRankDynamicSubview(ub, copy_sizes, loc);
-  }
+  llvm::SmallVector<int64_t> ub_shape =
+      GetStaticCopyShape(copy_projected, "T.copy_back");
+  mlir::Value ub_view = CreateStaticLocalUBView(ub_shape, copy_sizes,
+                                                srcTy.getElementType(), loc);
 
   builder.create<mlir::memref::CopyOp>(loc, src_view, ub_view);
   builder.create<mlir::memref::CopyOp>(loc, ub_view, dst_view);
@@ -2137,28 +2144,11 @@ void CodeGenTileLangNPUIRDEV::EmitCopyBackTensorToMemref(
     mlir::Value src_slice = CreateRankReducedExtractSlice(
         src, srcR.offs, srcR.sizes, srcR.strides, copy_projected, loc);
 
-    llvm::SmallVector<int64_t> ub_shape;
-    ub_shape.reserve(copy_projected.size());
-    for (int64_t d : copy_projected) {
-      ICHECK(!mlir::ShapedType::isDynamic(d))
-          << "T.copy_back does not support dynamic UB staging shape yet.";
-      ub_shape.push_back(d);
-    }
-    if (ub_shape.empty()) {
-      ub_shape.push_back(1);
-    }
-
-    mlir::Value ub = CreateStaticLocalUB(ub_shape, dstTy.getElementType(), loc);
-    mlir::Value ub_view = ub;
-    auto ubTy = ub.getType().cast<mlir::MemRefType>();
-    if (!OpFoldResultsEqualStaticShape(copy_sizes, ub_shape)) {
-      ICHECK(static_cast<int64_t>(copy_sizes.size()) == ubTy.getRank());
-      ub_view = CreateSameRankDynamicSubview(ub, copy_sizes, loc);
-    }
-    auto matOp =
-        builder.create<mlir::bufferization::MaterializeInDestinationOp>(
-            loc, src_slice, ub_view);
-    matOp.setWritable(true);
+    llvm::SmallVector<int64_t> ub_shape =
+        GetStaticCopyShape(copy_projected, "T.copy_back");
+    mlir::Value ub_view = CreateStaticLocalUBView(ub_shape, copy_sizes,
+                                                  dstTy.getElementType(), loc);
+    MaterializeTensorIntoMemref(src_slice, ub_view, loc);
     src_view = ub_view;
   }
 
@@ -4458,6 +4448,28 @@ void CodeGenTileLangNPUIRDEV::SetVarValue(const VarNode *v,
                                           const mlir::Value &value) {
   ICHECK(!var_map_.empty()) << "var_map_ is empty, fail to set value";
   var_map_.back()[v] = value;
+}
+
+void CodeGenTileLangNPUIRDEV::SetVarValueFromRegionResult(
+    const VarNode *v, mlir::Value expected_yield_value,
+    mlir::Value result_value, bool update_copy_back_backing) {
+  ICHECK(!var_map_.empty()) << "var_map_ is empty, fail to set value";
+  var_map_.back()[v] = result_value;
+
+  auto backing_it = copy_back_tensor_backing_memrefs_.find(v);
+  if (backing_it == copy_back_tensor_backing_memrefs_.end()) {
+    return;
+  }
+  if (update_copy_back_backing) {
+    backing_it->second.tensor_value = result_value;
+    return;
+  }
+  if (expected_yield_value != mlir::Value{} &&
+      backing_it->second.tensor_value == expected_yield_value) {
+    backing_it->second.tensor_value = result_value;
+    return;
+  }
+  copy_back_tensor_backing_memrefs_.erase(backing_it);
 }
 
 void CodeGenTileLangNPUIRDEV::SetVarValue(const CallNode *region_node,
