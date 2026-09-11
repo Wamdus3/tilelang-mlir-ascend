@@ -1172,6 +1172,32 @@ def npuir_clamp(
     T.evaluate(min_call)
 
 
+def set_atomic(kind: str, dtype: str = "float32"):
+    """Set atomic mode for subsequent GM writes on the current core.
+
+    This stateful operation does not insert barriers. Synchronize outstanding
+    writes on PIPE_MTE3 or PIPE_FIX before changing or resetting the mode.
+    Use ordinary T.copy/store_fixpipe inside the region, not T.atomic_add.
+    Reset to "none" before normal writes and before leaving the kernel.
+    Requires an AscendNPU-IR build providing hivm.hir.set_atomic.
+    """
+    if kind not in ("add", "max", "min", "none"):
+        raise ValueError(f"Unsupported atomic kind: {kind}")
+    if dtype not in ("float16", "float32", "bfloat16", "int8", "int16", "int32"):
+        raise ValueError(f"Unsupported atomic dtype: {dtype}")
+    return tir.call_intrin("handle", tir.op.Op.get("tl.npuir_set_atomic"), kind, dtype)
+
+
+def set_atomic_add(dtype: str = "float32"):
+    """Enable atomic addition; see set_atomic for synchronization requirements."""
+    return set_atomic("add", dtype)
+
+
+def set_atomic_none(dtype: str = "float32"):
+    """Disable atomic mode after synchronizing outstanding writes."""
+    return set_atomic("none", dtype)
+
+
 def npuir_atomic_add(dst, src, size: Optional[list] = None):
     """Perform atomic add operation on the NPU.
 

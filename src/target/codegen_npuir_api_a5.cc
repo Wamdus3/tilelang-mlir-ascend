@@ -1,3 +1,4 @@
+#include "codegen_npuir_atomic.h"
 // Copyright (c) Tile-AI Corporation.
 // Licensed under the MIT License.
 
@@ -5,10 +6,10 @@
  * \file target/codegen.cc
  */
 
-#include "codegen_npuir_api_a5.h"
 #include "../op/ascend.h"
 #include "../op/builtin.h"
 #include "arith/pattern_match.h"
+#include "codegen_npuir_api_a5.h"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -1297,6 +1298,8 @@ mlir::Value CodeGenTileLangNPUIRAPIA5::BinaryOpCodegen(const PrimExprNode *op,
 ///     - L0C -> GM : hivm.hir.fixpipe (enable_nz2nd=true)
 void CodeGenTileLangNPUIRAPIA5::AscendCopyCodegen(const CallNode *op) {
   tvm::tl::AscendCopy npuirop(op->args, this->vmap);
+  ICHECK(!npuirop.has_jump)
+      << "T.copy jump currently requires NPUIR Expert on a non-A5 device";
 
   const std::string src_scope = GetPtrStorageScope(npuirop.src->data);
   const std::string dst_scope = GetPtrStorageScope(npuirop.dst->data);
@@ -3172,6 +3175,8 @@ mlir::Value CodeGenTileLangNPUIRAPIA5::VisitExpr_(const CallNode *op) {
     VcumsumCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_sort"))) {
     VsortCodegen(op);
+  } else if (op->op.same_as(Op::Get("tl.npuir_set_atomic"))) {
+    EmitSetAtomic(builder, op, this->vmap);
   } else if (op->op.same_as(Op::Get("tl.npuir_atomic_add"))) {
     VAtomicAddCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_gather"))) {

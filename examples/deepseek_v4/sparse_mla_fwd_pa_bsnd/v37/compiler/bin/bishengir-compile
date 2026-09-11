@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SFA_PROXY_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+exec "${SFA_PYTHON:-python3}" "$SFA_PROXY_DIR/bishengir_compile_atomic.py" "$@"

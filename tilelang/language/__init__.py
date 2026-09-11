@@ -134,6 +134,9 @@ from .customize_npuir import (
     npuir_sort as vsort,  # noqa: F401
     npuir_clamp,  # noqa: F401
     npuir_clamp as vclamp,  # noqa: F401
+    set_atomic,  # noqa: F401
+    set_atomic_add,  # noqa: F401
+    set_atomic_none,  # noqa: F401
     npuir_atomic_add,  # noqa: F401
     npuir_atomic_add as atomic_add,  # noqa: F401
     npuir_atomic_addx4,  # noqa: F401

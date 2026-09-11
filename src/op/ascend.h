@@ -91,6 +91,11 @@ public:
   Buffer src, dst;
 
   Array<Range> src_range, dst_range;
+
+  // 用于 SFA 单指令双搬运：jump 是源块起点间的元素距离，不是字节 gap。
+  bool has_jump = false;
+  PrimExpr src_linear_offset;
+  PrimExpr jump;
 };
 
 class NpuirBinaryOperator : public Operator {
@@ -360,6 +365,13 @@ public:
   int64_t sort_axis;
 
   Array<Range> src_range, dst_value_range, dst_index_range;
+};
+
+class NpuirSetAtomic : public Operator {
+public:
+  NpuirSetAtomic(Array<PrimExpr> args, BufferMap vmap);
+  static const Op &Get();
+  std::string kind, dtype;
 };
 
 class NpuirAtomicAdd : public Operator {

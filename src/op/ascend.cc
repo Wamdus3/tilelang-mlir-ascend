@@ -73,6 +73,18 @@ NpuirOperand NpuirOperand::FromExpr(const PrimExpr &expr,
 }
 
 AscendCopy::AscendCopy(Array<PrimExpr> args, BufferMap vmap) : args_(args) {
+  ICHECK(args.size() == 2 || args.size() == 3 || args.size() == 5)
+      << "T.copy expects 2/3 legacy operands or 5 jump operands";
+  if (args.size() == 5) {
+    const auto *tag = args[2].as<StringImmNode>();
+    ICHECK(tag && tag->value == "jump_v1") << "Unknown T.copy extension";
+    ICHECK(args[3].dtype() == DataType::Int(64) &&
+           args[4].dtype() == DataType::Int(64))
+        << "T.copy jump requires int64 offset and pitch";
+    has_jump = true;
+    src_linear_offset = args[3];
+    jump = args[4];
+  }
   Array<Range> rgs[2];
   Buffer bf[2];
   for (int i = 0; i < 2; i++) {
@@ -359,6 +371,19 @@ NpuirSort::NpuirSort(Array<PrimExpr> args, BufferMap vmap) {
 
   descending = args[3].as<Bool>().value();
   sort_axis = args[4].as<IntImmNode>()->value;
+}
+
+NpuirSetAtomic::NpuirSetAtomic(Array<PrimExpr> args, BufferMap vmap) {
+  ICHECK_EQ(args.size(), 2U);
+  ICHECK(args[0].as<StringImmNode>() && args[1].as<StringImmNode>())
+      << "set_atomic requires constant kind and dtype strings";
+  kind = args[0].as<StringImmNode>()->value;
+  dtype = args[1].as<StringImmNode>()->value;
+  ICHECK(kind == "add" || kind == "max" || kind == "min" || kind == "none")
+      << "Unsupported atomic kind: " << kind;
+  ICHECK(dtype == "float16" || dtype == "float32" || dtype == "bfloat16" ||
+         dtype == "int8" || dtype == "int16" || dtype == "int32")
+      << "Unsupported atomic dtype: " << dtype;
 }
 
 NpuirAtomicAdd::NpuirAtomicAdd(Array<PrimExpr> args, BufferMap vmap) {
@@ -799,6 +824,11 @@ TIR_REGISTER_TL_OP(NpuirCumsum, npuir_cumsum)
 
 TIR_REGISTER_TL_OP(NpuirSort, npuir_sort)
     .set_num_inputs(5)
+    .set_attr<TCallEffectKind>("TCallEffectKind",
+                               Integer(CallEffectKind::kOpaque));
+
+TIR_REGISTER_TL_OP(NpuirSetAtomic, npuir_set_atomic)
+    .set_num_inputs(2)
     .set_attr<TCallEffectKind>("TCallEffectKind",
                                Integer(CallEffectKind::kOpaque));
 

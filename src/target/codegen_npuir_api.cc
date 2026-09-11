@@ -1,3 +1,4 @@
+#include "codegen_npuir_atomic.h"
 // Copyright (c) Tile-AI Corporation.
 // Licensed under the MIT License.
 
@@ -5,10 +6,10 @@
  * \file target/codegen.cc
  */
 
-#include "codegen_npuir_api.h"
 #include "../op/ascend.h"
 #include "../op/builtin.h"
 #include "arith/pattern_match.h"
+#include "codegen_npuir_api.h"
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -1343,6 +1344,149 @@ mlir::Value CodeGenTileLangNPUIRAPI::BuildAlignedCopyView(
       layout.viewSizes, layout.viewStrideValues);
 }
 
+// 用于 SFA 单指令双搬运：合法 jump 生成一次两块 GM->UB copy。
+// jump is a physical source pitch in elements, not a byte gap. Output rows
+// follow ascending GM addresses, including on the single-row DMA fallback.
+void CodeGenTileLangNPUIRAPI::CopyJumpCodegen(const CallNode *op) {
+  tvm::tl::AscendCopy cp(op->args, this->vmap);
+  ICHECK(cp.has_jump);
+  ICHECK(GetPtrStorageScope(cp.src->data) == "global" &&
+         GetPtrStorageScope(cp.dst->data) == "shared")
+      << "T.copy jump only supports GM -> UB";
+  ICHECK(cp.src->dtype == cp.dst->dtype)
+      << "T.copy jump requires identical element types";
+  auto dtype = cp.src->dtype;
+  ICHECK(dtype.lanes() == 1 &&
+         (dtype.is_int() || dtype.is_uint() || dtype.is_float() ||
+          dtype.is_bfloat16()) &&
+         (dtype.bits() == 8 || dtype.bits() == 16 || dtype.bits() == 32));
+  ICHECK(cp.src->strides.empty() && cp.dst->strides.empty());
+  // T.view aliases are deliberately excluded until metadata aliasing is
+  // covered.
+  bool is_parameter = false;
+  for (const auto &entry : this->vmap) {
+    is_parameter |= entry.second.same_as(cp.src);
+  }
+  ICHECK(is_parameter) << "T.copy jump source must be a GM parameter buffer";
+  ICHECK(cp.dst->shape.size() == 2 && cp.dst_range.size() == 2);
+  const auto *rows = cp.dst_range[0]->extent.as<IntImmNode>();
+  const auto *width = cp.dst_range[1]->extent.as<IntImmNode>();
+  ICHECK(rows && rows->value == 2 && width && width->value > 0);
+  const int64_t w = width->value;
+  const int64_t bytes = dtype.bits() / 8;
+  // This initial API excludes padding and burst-length splitting.
+  ICHECK(w <= 2097120 / bytes && (w * bytes) % 32 == 0)
+      << "T.copy jump row length must be 32B aligned and <= 2097120B";
+  arith::Analyzer analyzer;
+  ICHECK(cp.src_range.size() == cp.src->shape.size());
+  for (size_t i = 0; i < cp.src_range.size(); ++i) {
+    ICHECK(analyzer.CanProveEqual(cp.src_range[i]->min, 0) &&
+           analyzer.CanProveEqual(cp.src_range[i]->extent, cp.src->shape[i]))
+        << "T.copy jump requires a conservative whole-GM read region";
+  }
+  auto i64 = [](PrimExpr value) { return tir::Cast(DataType::Int(64), value); };
+  PrimExpr dstPitch = i64(cp.dst->shape[1]);
+  PrimExpr dstOffset =
+      i64(cp.dst_range[0]->min) * dstPitch + i64(cp.dst_range[1]->min);
+  const PrimExpr elementBytes = IntImm(DataType::Int(64), bytes);
+  const PrimExpr rowWidth = IntImm(DataType::Int(64), w);
+  ICHECK(analyzer.CanProve(floormod(dstPitch * elementBytes, 32) == 0) &&
+         analyzer.CanProve(floormod(dstOffset * elementBytes, 32) == 0) &&
+         analyzer.CanProve(dstPitch >= rowWidth))
+      << "T.copy jump requires provably 32B-aligned UB rows and start";
+
+  auto loc = builder.getUnknownLoc();
+  auto src = GetVarValue(cp.src->data.get());
+  auto srcTy = src.getType().cast<mlir::MemRefType>();
+  ICHECK(srcTy.getRank() == static_cast<int64_t>(cp.src->shape.size()));
+  auto meta = builder.create<mlir::memref::ExtractStridedMetadataOp>(loc, src);
+  auto offset = builder.create<mlir::arith::AddIOp>(
+      loc, meta.getOffset(),
+      CreateIndexCastOp(MakeValue(cp.src_linear_offset)));
+  mlir::Value pitch = CreateIndexCastOp(MakeValue(cp.jump));
+  auto dst = GenSubviewFromRegion(cp.dst, cp.dst_range);
+  auto dstTy = dst.getType().cast<mlir::MemRefType>();
+  ICHECK(dstTy.getRank() == 2 && dstTy.getDimSize(0) == 2 &&
+         dstTy.getDimSize(1) == w);
+
+  auto makeSrc = [&](mlir::Value start, int64_t count,
+                     mlir::OpFoldResult rowPitch) -> mlir::Value {
+    int64_t staticPitch = mlir::ShapedType::kDynamic;
+    if (auto attr = rowPitch.dyn_cast<mlir::Attribute>())
+      staticPitch = attr.cast<mlir::IntegerAttr>().getInt();
+    auto layout = mlir::StridedLayoutAttr::get(
+        builder.getContext(), mlir::ShapedType::kDynamic, {staticPitch, 1});
+    auto type = mlir::MemRefType::get({count, w}, srcTy.getElementType(),
+                                      layout, srcTy.getMemorySpace());
+    llvm::SmallVector<mlir::OpFoldResult> sizes = {builder.getIndexAttr(count),
+                                                   builder.getIndexAttr(w)};
+    llvm::SmallVector<mlir::OpFoldResult> strides = {rowPitch,
+                                                     builder.getIndexAttr(1)};
+    // reinterpret_cast offset is relative to the underlying allocation, not
+    // relative to the input view. Include meta.offset exactly once.
+    return builder.create<mlir::memref::ReinterpretCastOp>(
+        loc, type, src, mlir::OpFoldResult(start), sizes, strides);
+  };
+  auto emitCopy = [&](mlir::Value from, mlir::Value to) {
+    builder.create<mlir::memref::CopyOp>(loc, mlir::TypeRange{}, from, to);
+  };
+
+  auto zero = builder.create<mlir::arith::ConstantIndexOp>(loc, 0);
+  auto reversed = builder.create<mlir::arith::CmpIOp>(
+      loc, mlir::arith::CmpIPredicate::slt, pitch, zero);
+  auto otherOffset = builder.create<mlir::arith::AddIOp>(loc, offset, pitch);
+  // 用于 SFA 单指令双搬运：负 jump 交换输出两行，不做 UB 重排。
+  // Apply the same address order on EVERY path: KV and RoPE may have different
+  // widths/layouts and therefore take different fast/fallback branches.
+  auto firstOffset =
+      builder.create<mlir::arith::SelectOp>(loc, reversed, otherOffset, offset);
+  auto secondOffset =
+      builder.create<mlir::arith::SelectOp>(loc, reversed, offset, otherOffset);
+
+  // Check signed bounds before negation so INT64_MIN cannot overflow an abs.
+  const int64_t maxDistance = w + 2147483646LL / bytes;
+  auto inRange = [&](int64_t low, int64_t high) -> mlir::Value {
+    auto lo = builder.create<mlir::arith::ConstantIndexOp>(loc, low);
+    auto hi = builder.create<mlir::arith::ConstantIndexOp>(loc, high);
+    auto lowerOk = builder.create<mlir::arith::CmpIOp>(
+        loc, mlir::arith::CmpIPredicate::sge, pitch, lo);
+    auto upperOk = builder.create<mlir::arith::CmpIOp>(
+        loc, mlir::arith::CmpIPredicate::sle, pitch, hi);
+    return builder.create<mlir::arith::AndIOp>(loc, lowerOk, upperOk);
+  };
+  mlir::Value fast = builder.create<mlir::arith::OrIOp>(
+      loc, inRange(w, maxDistance), inRange(-maxDistance, -w));
+  // 用于 SFA 单指令双搬运的 UB 两行必须连续。CANN 9 mis-lowers
+  // the row pitch of a two-row load into a padded, column-offset UB subview.
+  // Preserve such slices with the verified single-row fallback instead.
+  if (!analyzer.CanProveEqual(dstPitch, rowWidth))
+    fast = builder.create<mlir::arith::ConstantIntOp>(loc, 0, 1);
+  auto ifOp =
+      builder.create<mlir::scf::IfOp>(loc, mlir::TypeRange{}, fast, true, true);
+  builder.setInsertionPointToEnd(&ifOp.getThenRegion().front());
+  auto negPitch = builder.create<mlir::arith::SubIOp>(loc, zero, pitch);
+  auto positivePitch =
+      builder.create<mlir::arith::SelectOp>(loc, reversed, negPitch, pitch);
+  emitCopy(makeSrc(firstOffset, 2, mlir::OpFoldResult(positivePitch)), dst);
+  builder.create<mlir::scf::YieldOp>(loc);
+
+  builder.setInsertionPointToEnd(&ifOp.getElseRegion().front());
+  for (int64_t row = 0; row < 2; ++row) {
+    mlir::Value start = row == 0 ? firstOffset : secondOffset;
+    llvm::SmallVector<mlir::OpFoldResult> offsets = {builder.getIndexAttr(row),
+                                                     builder.getIndexAttr(0)};
+    llvm::SmallVector<mlir::OpFoldResult> sizes = {builder.getIndexAttr(1),
+                                                   builder.getIndexAttr(w)};
+    llvm::SmallVector<mlir::OpFoldResult> strides = {builder.getIndexAttr(1),
+                                                     builder.getIndexAttr(1)};
+    auto dstRow = builder.create<mlir::memref::SubViewOp>(loc, dst, offsets,
+                                                          sizes, strides);
+    emitCopy(makeSrc(start, 1, builder.getIndexAttr(w)), dstRow);
+  }
+  builder.create<mlir::scf::YieldOp>(loc);
+  builder.setInsertionPointAfter(ifOp);
+}
+
 /// Generate hivm.hir.load or hivm.hir.store for tl.copy.
 /// before:
 ///   T.copy(T.region(A[bx, by], 1, 128, 256), T.region(A_VEC[0, 0],
@@ -1355,6 +1499,10 @@ mlir::Value CodeGenTileLangNPUIRAPI::BuildAlignedCopyView(
 ///     - L0C -> GM : hivm.hir.fixpipe (enable_nz2nd=true)
 void CodeGenTileLangNPUIRAPI::AscendCopyCodegen(const CallNode *op) {
   tvm::tl::AscendCopy npuirop(op->args, this->vmap);
+  if (npuirop.has_jump) {
+    CopyJumpCodegen(op);
+    return;
+  }
 
   const std::string src_scope = GetPtrStorageScope(npuirop.src->data);
   const std::string dst_scope = GetPtrStorageScope(npuirop.dst->data);
@@ -2681,6 +2829,8 @@ mlir::Value CodeGenTileLangNPUIRAPI::VisitExpr_(const CallNode *op) {
     VcumsumCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_sort"))) {
     VsortCodegen(op);
+  } else if (op->op.same_as(Op::Get("tl.npuir_set_atomic"))) {
+    EmitSetAtomic(builder, op, this->vmap);
   } else if (op->op.same_as(Op::Get("tl.npuir_atomic_add"))) {
     VAtomicAddCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_gather"))) {

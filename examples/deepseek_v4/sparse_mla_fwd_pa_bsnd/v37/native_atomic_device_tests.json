@@ -1,0 +1,157 @@
+{
+  "date": "2026-09-11",
+  "precision": [
+    {
+      "tokens": 16,
+      "topk": 512,
+      "calls": 18,
+      "max_abs": {
+        "Output": 0.003656744956970215,
+        "Max": 6.67572021484375e-06,
+        "Sum": 0.00067138671875
+      },
+      "compiler_retries": 0,
+      "candidate_sha256": "9e4d87fc2a9b9cfdc60cf5748c3a8024fb1101a3372ccce71623114d1c277fd5",
+      "source": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T031418Z-atomic-device/results/20260911T031418Z-atomic-device/precision-t16.json"
+    },
+    {
+      "tokens": 512,
+      "topk": 2048,
+      "calls": 18,
+      "max_abs": {
+        "Output": 0.0045662522315979,
+        "Max": 1.1444091796875e-05,
+        "Sum": 0.00250244140625
+      },
+      "compiler_retries": 1,
+      "candidate_sha256": "9e4d87fc2a9b9cfdc60cf5748c3a8024fb1101a3372ccce71623114d1c277fd5",
+      "source": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T031418Z-atomic-device/precision.json"
+    },
+    {
+      "tokens": 4096,
+      "topk": 2048,
+      "calls": 18,
+      "max_abs": {
+        "Output": 0.004792392253875732,
+        "Max": 1.1444091796875e-05,
+        "Sum": 0.003173828125
+      },
+      "compiler_retries": 0,
+      "candidate_sha256": "9e4d87fc2a9b9cfdc60cf5748c3a8024fb1101a3372ccce71623114d1c277fd5",
+      "source": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T031418Z-atomic-device/results/20260911T031418Z-atomic-device/precision-t4096.json"
+    }
+  ],
+  "precision_calls": 54,
+  "profiles": [
+    {
+      "tokens": 512,
+      "topk": 2048,
+      "mode": 0,
+      "samples_us": [
+        1478.479126,
+        1422.236938,
+        1433.697388,
+        1425.516968,
+        1427.037109,
+        1430.577271,
+        1425.516968,
+        1428.937134,
+        1425.617065,
+        1427.25708,
+        1423.677002,
+        1425.317017,
+        1424.416992,
+        1422.276855,
+        1427.537109,
+        1427.817139,
+        1420.636841,
+        1432.957275,
+        1432.577271,
+        1438.777588
+      ],
+      "count": 20,
+      "median_us": 1427.1470945,
+      "min_us": 1420.636841,
+      "max_us": 1478.479126,
+      "old_tilelang_us": 1410.7364499999999,
+      "ascendc_us": 1364.4945985,
+      "latency_change": 0.011632679158463777,
+      "relative_performance": 0.9560994824980179,
+      "frequency_mhz": 1800,
+      "aic": 24,
+      "aiv": 48,
+      "device": 13,
+      "source": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T031418Z-atomic-device/results/20260911T031418Z-atomic-device/profile-m0",
+      "compiler_retry_markers": 0
+    },
+    {
+      "tokens": 512,
+      "topk": 2048,
+      "mode": 3,
+      "samples_us": [
+        1480.299194,
+        1425.857056,
+        1421.796875,
+        1429.257202,
+        1421.556885,
+        1419.916748,
+        1418.216675,
+        1431.557251,
+        1423.17688,
+        1419.756836,
+        1423.856934,
+        1423.096924,
+        1425.197021,
+        1423.716919,
+        1419.196777,
+        1423.096924,
+        1424.437012,
+        1423.677002,
+        1426.877075,
+        1425.477051
+      ],
+      "count": 20,
+      "median_us": 1423.6969605,
+      "min_us": 1418.216675,
+      "max_us": 1480.299194,
+      "old_tilelang_us": 1412.086487,
+      "ascendc_us": 1363.66452025,
+      "latency_change": 0.008222211321253114,
+      "relative_performance": 0.957833414051178,
+      "frequency_mhz": 1800,
+      "aic": 24,
+      "aiv": 48,
+      "device": 13,
+      "source": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T031418Z-atomic-device/results/20260911T031418Z-atomic-device/profile-m3",
+      "compiler_retry_markers": 0
+    }
+  ],
+  "performance_samples": 40,
+  "comparison": "Fresh explicit atomic version versus historical frozen TileLang/AscendC records; baselines not rerun",
+  "configuration": {
+    "B": 4,
+    "equal_S": true,
+    "H": 32,
+    "D": 512,
+    "R": 64,
+    "page": 128,
+    "dtype": "bfloat16",
+    "tile": 512
+  },
+  "synchronization": "Explicit atomic mode; manual barriers; existing multibuffer UB layout",
+  "precision_tolerances": {
+    "Output": {
+      "rtol": 0.02,
+      "atol": 0.002
+    },
+    "Max": {
+      "rtol": 0.0002,
+      "atol": 2e-05
+    },
+    "Sum": {
+      "rtol": 0.0002,
+      "atol": 0.001
+    }
+  },
+  "baseline_sha256": "e9c7b32feae2a9bf5f854936f20e4b9124974523e33387e0164b7abcdeb6a45d"
+}

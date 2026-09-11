@@ -1,0 +1,193 @@
+{
+  "base_commit": "d7c73142068b9a6d3df1e90a06b842da8d06962b",
+  "measured_v37_sha256": "eeb5795a1d9e32e7e796c25127fda58caf7655f171c135d56f31bca3e5fe1300",
+  "published_v37_sha256": "2cd56d600dc47dff5b5f3fb86cc006de28590632147c429d7493b98b7308e5ce",
+  "executable_v37_ast_unchanged": false,
+  "ub_placement_ast_unchanged": false,
+  "atomic_transform_ast_unchanged_except_configurable_paths": false,
+  "tilelang_cpp_tokens_and_python_ast_unchanged_from_remote_measured_sources": false,
+  "host_copy_jump_tests_passed": 17,
+  "reference_fixture_cases_passed": 12,
+  "pre_commit_hooks_passed": true,
+  "clang_tidy_ran": false,
+  "clang_tidy_note": "No local C++ build database; format.sh bootstrap uses pip --user, incompatible with the isolated venv. All pre-commit hooks passed.",
+  "npu_precision_calls_reused": 90,
+  "profiling_samples_reused": 360,
+  "tvm_commit": "c2921fdaf795b1103d21abc962e83a209c7258d7",
+  "atomic_frontend_base_commit": "31f690369d1247fbd5529a3f88b758f7d470ae4f",
+  "atomic_frontend_requires_external_atomic_support": true,
+  "atomic_frontend_binary_sha256": "fdb146ce06493cd007d276af9e68b54ec32bb75e7f56efa06aaaa3fbb40c6074",
+  "cann_compiler_version": "bishengir-compile1.1.0,428ab8fdab46,2026-04-30;LLVM19.1.7",
+  "cann_compiler_sha256": "724f2e3506f013e2ef7e72dec79551d5847651a809aa1755a1dd1d7658b28de2",
+  "files": {
+    "src/op/ascend.cc": "91e24fb9f3392af8750618cc8f059e85bbaf8c7c0569dd48b19a426e2355dcfe",
+    "src/op/ascend.h": "d0dcd7888ba6fe23d21323100447d09be759f4f01be14240a4bf870595363c0b",
+    "src/op/elem.cc": "a400d76bb59738f85981106c0778ef0761f544e511e8b22c4a1e35d4191f38b4",
+    "src/target/codegen_npuir_api.cc": "47f50171506a76dcae2f1b802b317211689ca41f7a9dd53c22be90422f661d87",
+    "src/target/codegen_npuir_api.h": "bcee7f740b2bc8ab1615873fd9e7dc7c10aaff5f4fc5f11b335615b5573f9345",
+    "src/target/codegen_npuir_api_a5.cc": "35a6ba122cd2c914839367c7595d9bee84fec92f0a8ed3e51b1b8ed9342cad7b",
+    "src/target/codegen_npuir_dev.cc": "667567fa713a118994b808538be975d4724872a9be1b1c433e9cc5818df3dfe0",
+    "src/target/codegen_npuir_dev_a5.cc": "69bcb019fbab170ad65109d959d46cb30e4a3a9a5a1f8861a6f68eadfbe9e37c",
+    "tilelang/engine/phase.py": "906fc0f12bff4a03552ccd7b7100deeef66174c2ff1f18bf22c873102a9ebf72",
+    "tilelang/language/copy.py": "43622c8118598633ce4099668abf3c2c846900cdebf04aaa88c1d5bc4e99b22d",
+    "docs/Tilelang.language/内存操作/T.copy.md": "ea67d3c927588e3f08203b0982195a7aa3ab499fdf917ea31766bff66d674adc",
+    "testing/python/language/test_tilelang_language_copy_jump.py": "869085b160cca70ed8ccf62722de31250e46936c25c0f8ea7c0d8e3aafcc3451",
+    "testing/npuir/memory_ops/test_copy_jump_exp.py": "08b8d0f362ff663b2fc4d6edb2adc18a7d31b28b874ff71b4d3a5dadbd073f00",
+    "examples/deepseek_v4/sfa_copy_jump_ir.py": "6ef8f60237fc44b6a7960abef4eb50bf68dd8f6aa2afa28fed4cda2c62cff72b",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/sfa_t_scaling_linear.png": "cfb78b9c2afa8e95308f1dd8ff19149cf5f7ea38c79dffe630aad0136a5c1559",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/sfa_variable_t_opt_v37_zero_guard.py": "2cd56d600dc47dff5b5f3fb86cc006de28590632147c429d7493b98b7308e5ce",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/performance.json": "e9c7b32feae2a9bf5f854936f20e4b9124974523e33387e0164b7abcdeb6a45d",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/regress_variable_t.py": "34d1446e74257d74f373ca609e3780d3b4ab38cf204166a5d1adf666ffbd66cd",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/sfa_t_scaling.svg": "380fd90b6306f51168c26727fc21639fa8d51812dc9f98ac0f62e384fb5730ed",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/profile_auto.py": "7a7cb48bd7172718c095a699adb3039e76af9743bea2a84ad0f59c419705b42d",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/sfa_t_scaling.png": "d01290de2b56a0e4e8812d3d80e5c22583b3812384b83f3f5fe904618eac813e",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/compiler/ub_pool_adapter.py": "8b2a08083fda5257f85772716dab84d765982d4454827ef6e7882e71536887aa",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/compiler/bishengir_compile_atomic.py": "811387dbbde1134b9d1fc4153169b73b07277ea8fcd75daefed15cca70d10e75",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/compiler/bin/bishengir-compile": "fc1c45b206045bd8b7e4e02e022dd8afe4eeaaa4dcc9f69001dccb6fb31cc44f",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/README.md": "5aed7cd31ea111496bd1b703518cdf0b8e3dbdd8033015d81a689649e1d35505",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/performance.md": "d469ae2c2dba3268dd1512d74b5d0ee8926fd81799b40983d5cd4ef1ebfbe88e",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/compiler/sfa_ub_layout.py": "14c7594ea2d30b3693aa41e4afd2a4073edce33e9248cc63c2ab0608cf0b2936",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/compiler/test_ub_pool_adapter.py": "787da039450d98eb0232f09355ada24241ab3c8066c6f7fc34ff02598362098e",
+    "CMakeLists.txt": "58c1cd6cdb55a571dfd4fcde98bfe97250fc65d661d5c908c1982241f579ab7e",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/compiler/test_bishengir_compile_atomic.py": "296c1bd2858373141b15abd2b4b6acfe6bbbfc97e308f72a4be8a95d6d3d2ac3",
+    "tilelang/language/__init__.py": "cda38ffe9b9139a0899a8144edcb63e3f56b7594662ff74b58082b9b2b76e5f1",
+    "tilelang/language/customize_npuir.py": "351dd8d33c5cfb4f0e6578eff2771ca49df1a496f72fe7d4c792796e26556198",
+    "src/target/codegen_npuir_atomic.h": "23a71e73b5bf92a23af8d66e7ce207d94229506383af6a345e1f28304e524086",
+    "testing/python/language/test_tilelang_language_set_atomic.py": "2148ad6977e292bef1d98a19b294745ea4569eb79a8d36d907e4c8a4ffde27e4",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/native_atomic_device_tests.md": "d67ed05c6f1ff962ab58c5920aa1014565aa36d3a9569ed84a396a57940429b9",
+    "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/native_atomic_device_tests.json": "a553bb64174c52e517f88e7b65310193694f9e5ea11f5b9a21580272398d9ef4",
+    "docs/Tilelang.language/同步管道操作/T.set_atomic.md": "e9ee140ad47cb683e50078b0690a41986c10545b623fc1f436c72663e21bc9c3"
+  },
+  "ub_placement_refactor": {
+    "adapter_sha256": "8b2a08083fda5257f85772716dab84d765982d4454827ef6e7882e71536887aa",
+    "cases": 75,
+    "unique_inputs": 42,
+    "emitted_ir_byte_identical": true,
+    "recorded_layouts_identical": true,
+    "kernel_rename_independent": true,
+    "rejection_checks": [
+      "missing_required_buffer",
+      "duplicate_buffer",
+      "unlisted_shape",
+      "noncontiguous_stride",
+      "empty_input",
+      "pool_overflow",
+      "misaligned_offset"
+    ],
+    "physical_ub_bytes": 174080,
+    "generic_interface_tests_passed": 6,
+    "layout_data_separated": true,
+    "note": "Generic adapter receives an operator-owned layout specification; captured supported inputs produce byte-identical IR. Existing kernel measurements are reused."
+  },
+  "atomic_transform_ast_unchanged_except_configurable_paths_and_layout_wiring": false,
+  "native_explicit_atomic": {
+    "date": "2026-09-11",
+    "host_api_tests_passed": 29,
+    "host_driver_and_ub_tests_passed": 8,
+    "compile_cases": [
+      {
+        "tokens": 16,
+        "topk": 512,
+        "mode": 3,
+        "atomic_regions": 1,
+        "attempts": [
+          {
+            "exit": 0,
+            "seconds": 3.8702185600996017
+          }
+        ],
+        "ir_sha256": "6cdacffcfd5fb14435abdd82860bb1c0fb3c7e07fa8ea23d17884efb9005c780"
+      },
+      {
+        "tokens": 512,
+        "topk": 2048,
+        "mode": 0,
+        "atomic_regions": 3,
+        "attempts": [
+          {
+            "exit": 0,
+            "seconds": 4.070560574531555
+          }
+        ],
+        "ir_sha256": "b6dc22de9f2d8f8d4ab49a349436e016a00740fd97b8b2a9856044b9c96babc8"
+      },
+      {
+        "tokens": 512,
+        "topk": 2048,
+        "mode": 3,
+        "atomic_regions": 3,
+        "attempts": [
+          {
+            "exit": 0,
+            "seconds": 4.2707082107663155
+          }
+        ],
+        "ir_sha256": "0b0b20aab9b1fcf3128cfc94270285a2b2b2bb9ed53dabd29fc4b36b7d6ad718"
+      },
+      {
+        "tokens": 4096,
+        "topk": 2048,
+        "mode": 3,
+        "atomic_regions": 3,
+        "attempts": [
+          {
+            "exit": 0,
+            "seconds": 4.070388771593571
+          }
+        ],
+        "ir_sha256": "975654c6050e200affab8193ef1a11ed1c5dab401e317ca14a5206c4b2a86581"
+      }
+    ],
+    "atomic_lowering": "Native typed HIVM SetAtomicOp; no adapter atomic rewriting",
+    "build_target": "A2/A3 Expert and Developer codegen",
+    "a5_built": false,
+    "full_object_equivalence": {
+      "tokens": 512,
+      "topk": 2048,
+      "mode": 3,
+      "objects": [
+        {
+          "reference": "/Users/wamdus/mt/sfa-native-ub-20260911/20260911T014713Z-sfa-native-ub-env/control/kernel-1.mix_aic.o",
+          "current": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T024136Z-explicit-atomic-check-rtti/compile/t512_k2048_m3/kernel-0.mix_aic.o",
+          "reference_sha256": "2bc7cf980774df5ba4368f0d3a2d455abc337906dea8de92553e99e99f516fc9",
+          "current_sha256": "2bc7cf980774df5ba4368f0d3a2d455abc337906dea8de92553e99e99f516fc9",
+          "byte_identical": true
+        },
+        {
+          "reference": "/Users/wamdus/mt/sfa-native-ub-20260911/20260911T014713Z-sfa-native-ub-env/control/kernel-1.mix_aiv.o",
+          "current": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T024136Z-explicit-atomic-check-rtti/compile/t512_k2048_m3/kernel-0.mix_aiv.o",
+          "reference_sha256": "5414118130c58033e6c1653dbb53ee3afedbaa8cb2209db1ceb09f3b44d18481",
+          "current_sha256": "5414118130c58033e6c1653dbb53ee3afedbaa8cb2209db1ceb09f3b44d18481",
+          "byte_identical": true
+        },
+        {
+          "reference": "/Users/wamdus/mt/sfa-native-ub-20260911/20260911T014713Z-sfa-native-ub-env/control/kernel-1.o",
+          "current": "/Users/wamdus/mt/sfa-explicit-atomic-20260911/20260911T024136Z-explicit-atomic-check-rtti/compile/t512_k2048_m3/kernel-0.o",
+          "reference_sha256": "36709096baf32614969534d38c8c358d4d45b0673bd46c8b1bd68a1bf0772b11",
+          "current_sha256": "36709096baf32614969534d38c8c358d4d45b0673bd46c8b1bd68a1bf0772b11",
+          "byte_identical": true
+        }
+      ]
+    },
+    "fresh_npu_precision_calls": 54,
+    "fresh_performance_runs": 2,
+    "source_archive_sha256": "525e23a0d159208e012231aab8cd0f6ab23e6b82f027df65e307ec188b92823e",
+    "local_vs_remote_source_note": "Python AST unchanged; C++ tokens unchanged after ignoring comments, whitespace and include sorting. Host driver tests updated locally and passed separately.",
+    "remote_build": "/workdir/yja-sfa/tilelang-explicit-atomic/20260911T023413Z-explicit-atomic",
+    "remote_result": "/workdir/yja-sfa/variable-t-results/20260911T024136Z-explicit-atomic-check-rtti",
+    "atomic_dependencies": "/workdir/yja-bishengir-atomic",
+    "atomic_ir_base_commit": "31f690369d1247fbd5529a3f88b758f7d470ae4f",
+    "initial_precision_attempt": {
+      "exit": 75,
+      "status": "Idle guard aborted before launch; all 16 NPUs occupied"
+    },
+    "device_validation": "examples/deepseek_v4/sparse_mla_fwd_pa_bsnd/v37/native_atomic_device_tests.json",
+    "device_precision_passed": true,
+    "device_profiling_samples": 40,
+    "remote_device_results": [
+      "/workdir/yja-sfa/variable-t-results/20260911-explicit-atomic-device-01",
+      "/workdir/yja-sfa/variable-t-results/20260911T031418Z-atomic-device"
+    ]
+  },
+  "historical_measurement_note": "The 90 precision calls and 360 profiling samples belong to the earlier publication. Native explicit atomics subsequently passed 54 fresh precision calls and two fresh 20-sample profiles; frozen baselines were not rerun."
+}

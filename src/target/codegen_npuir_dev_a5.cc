@@ -1,3 +1,4 @@
+#include "codegen_npuir_atomic.h"
 // Copyright (c) Tile-AI Corporation.
 // Licensed under the MIT License.
 
@@ -5,10 +6,10 @@
  * \file target/codegen.cc
  */
 
-#include "codegen_npuir_dev_a5.h"
 #include "../op/ascend.h"
 #include "../op/builtin.h"
 #include "arith/pattern_match.h"
+#include "codegen_npuir_dev_a5.h"
 #include <atomic>
 #include <cmath>
 #include <cstddef>
@@ -1950,6 +1951,8 @@ void CodeGenTileLangNPUIRDEVA5::EmitCopyTensorToTensor(
  */
 void CodeGenTileLangNPUIRDEVA5::AscendCopyCodegen(const CallNode *op) {
   tvm::tl::AscendCopy npuirop(op->args, this->vmap);
+  ICHECK(!npuirop.has_jump)
+      << "T.copy jump currently requires NPUIR Expert on a non-A5 device";
 
   mlir::Value src = GetVarValue(npuirop.src);
   mlir::Value dst = GetVarValue(npuirop.dst);
@@ -4286,6 +4289,8 @@ mlir::Value CodeGenTileLangNPUIRDEVA5::VisitExpr_(const CallNode *op) {
     VreduceCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_sigmoid"))) {
     VsigmoidCodegen(op);
+  } else if (op->op.same_as(Op::Get("tl.npuir_set_atomic"))) {
+    EmitSetAtomic(builder, op, this->vmap);
   } else if (op->op.same_as(Op::Get("tl.npuir_atomic_add"))) {
     VAtomicAddCodegen(op);
   } else if (op->op.same_as(Op::Get("tl.npuir_cumsum"))) {

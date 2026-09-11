@@ -83,6 +83,18 @@ if(USE_NPUIR)
     find_package(MLIR REQUIRED CONFIG)
     list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}" "${LLVM_CMAKE_DIR}")
   endif()
+  # Keep standard IR builds usable; explicit atomic APIs require the matching
+  # dialect extension and report a codegen error when it is unavailable.
+  foreach(_ir_include IN LISTS BISHENGIR_INCLUDE_DIRS)
+    set(_hivm_ops "${_ir_include}/bishengir/Dialect/HIVM/IR/HIVMOps.h.inc")
+    if(EXISTS "${_hivm_ops}")
+      file(STRINGS "${_hivm_ops}" _set_atomic_decl REGEX "class SetAtomicOp;" LIMIT_COUNT 1)
+      if(_set_atomic_decl)
+        add_compile_definitions(TILELANG_HAS_HIVM_SET_ATOMIC=1)
+        break()
+      endif()
+    endif()
+  endforeach()
   set(TRITON_INCLUDE_DIR
     "${PROJECT_SOURCE_DIR}/3rdparty/AscendNPU-IR-Dev/third-party/triton/include"
     CACHE PATH "Path to Triton headers required by AscendNPU-IR"
