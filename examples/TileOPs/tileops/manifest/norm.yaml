@@ -1,0 +1,58 @@
+# norm.yaml -- manifest entries for the 'norm' family (NPU benchmark).
+#
+# Standalone spec; no dependency on the TileOPs repository.
+# Ported from TileOPs ``tileops/manifest/normalization.yaml`` --
+# AdaLayerNormFwdOp entry only (the neighbouring AdaLayerNormZeroFwdOp and
+# the other norm entries are not migrated yet).
+#
+# Note: the GPU repo names the manifest file ``normalization.yaml`` while its
+# ops/kernels family directory is ``norm``; the NPU project keeps one name
+# (``norm``) for the manifest file, workload module, and package directories.
+# See docs/gpu_to_npu_adaptation.md for the GPU-to-NPU adaptation notes.
+
+AdaLayerNormFwdOp:
+  ref_api: "none"
+  family: norm
+  status: implemented
+
+  signature:
+    inputs:
+      x: {dtype: "float32 | float16 | bfloat16"}
+      scale: {dtype: "same_as(x)"}
+      shift: {dtype: "same_as(x)"}
+    outputs:
+      output: {dtype: "same_as(x)"}
+    params:
+      eps: {type: float, default: 1.0e-5}
+    shape_rules:
+      - "scale.shape == x.shape"
+      - "shift.shape == x.shape"
+      - "output.shape == x.shape"
+
+  workloads:
+    # Smoke: small DiT-style block (all three dtypes)
+    - {x_shape: [64, 1152], dtypes: [float32, float16, bfloat16], label: "smoke-dit"}
+    # Full: DiT-XL/2 (hidden_dim=1152)
+    - {x_shape: [1024, 1152], dtypes: [float16, bfloat16], label: "dit-xl-2"}
+    # Full: Llama-3.1-8B prefill (hidden_dim=4096)
+    - {x_shape: [2048, 4096], dtypes: [float16, bfloat16], label: "llama-3.1-8b-prefill"}
+    # Full: Llama-3.1-8B decode
+    - {x_shape: [1, 4096], dtypes: [bfloat16], label: "llama-3.1-8b-decode"}
+
+  roofline:
+    vars:
+      M: "product(x.shape[:-1])"
+      N: "x.shape[-1]"
+    # Per row: N mean + N variance + N normalize + N scale + N shift ≈ 5N
+    flops: "5 * M * N"
+    # Read x + read scale + read shift + write output = 4*M*N
+    bytes: "4 * M * N * elem_bytes"
+
+  source:
+    kernel: tileops/kernels/norm/ada_layer_norm/ada_layer_norm.py
+    kernel_map:
+      ada_layer_norm: AdaLayerNormKernel
+    op: tileops/ops/norm/ada_layer_norm.py
+    test: tests/ops/test_ada_layer_norm.py
+    bench: benchmarks/ops/bench_ada_layer_norm.py
+    bench_manifest_driven: true
