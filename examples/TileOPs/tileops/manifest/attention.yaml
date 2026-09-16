@@ -1,0 +1,69 @@
+# attention.yaml -- manifest entries for the 'attention' family (NPU benchmark).
+#
+# Standalone spec; no dependency on the TileOPs repository.
+# See docs/gpu_to_npu_adaptation.md for the GPU-to-NPU adaptation notes.
+#
+# Ported from the GPU TileOPs manifest (attention.yaml,
+# MultiHeadAttentionFwdOp entry only; the other attention ops -- MHA
+# backward/decode, GQA prefill/decode, sliding window, MLA/DSA -- are not
+# migrated yet).  signature / shape_rules / workloads are copied verbatim
+# from the GPU entry (extended with a leading smoke case per the NPU
+# manifest workload contract); roofline is the GPU
+# ``tileops.perf.formulas.mha_fwd_roofline`` inlined as vars/flops/bytes
+# (the NPU project has no tileops.perf module).
+
+MultiHeadAttentionFwdOp:
+  ref_api: "torch.nn.functional.scaled_dot_product_attention"
+  family: attention
+  status: implemented
+  torch_compile_fullgraph: true
+
+  signature:
+    inputs:
+      q: {dtype: "float16 | bfloat16"}
+      k: {dtype: "same_as(q)"}
+      v: {dtype: "same_as(q)"}
+    outputs:
+      o: {dtype: "same_as(q)"}
+    params:
+      is_causal: {type: bool, default: true}
+    shape_rules:
+    - "q.shape == (B, S, H, D)"
+    - "k.shape == (B, S, H, D)"
+    - "v.shape == (B, S, H, D)"
+    - "o.shape == (B, S, H, D)"
+
+  workloads:
+    # Smoke: smallest robust shape (NPU manifest workload contract).
+  - {q_shape: [1, 512, 8, 64], kv_shape: [1, 512, 8, 64], is_causal: true, dtypes: [float16, bfloat16], label: "mha-fwd-smoke-s512-h8-d64"}
+    # Full: GPU manifest workloads -- Llama-3.1-8B (H=32, D=128).
+  - {q_shape: [4, 512, 32, 128], kv_shape: [4, 512, 32, 128], is_causal: true, dtypes: [float16, bfloat16], label: "llama-3.1-8b-short"}
+  - {q_shape: [2, 2048, 32, 128], kv_shape: [2, 2048, 32, 128], is_causal: true, dtypes: [float16, bfloat16], label: "llama-3.1-8b-long"}
+    # Full: GPU manifest workloads -- Llama-3.1-70B (H=64, D=128).
+  - {q_shape: [2, 512, 64, 128], kv_shape: [2, 512, 64, 128], is_causal: true, dtypes: [float16, bfloat16], label: "llama-3.1-70b-short"}
+  - {q_shape: [1, 2048, 64, 128], kv_shape: [1, 2048, 64, 128], is_causal: true, dtypes: [float16, bfloat16], label: "llama-3.1-70b-long"}
+
+  roofline:
+    vars:
+      q_elems: "product(q_shape)"
+      kv_elems: "product(kv_shape)"
+      full_flops: "4 * q_shape[0] * q_shape[2] * q_shape[1] * q_shape[1] * q_shape[3]"
+    # Inlined from the GPU ``tileops.perf.formulas.mha_fwd_roofline``:
+    # 2 GEMMs per (S x S x D) score/output pair = 4 * B * H * S * S * D
+    # FLOPs, halved when causal; q/k/v/o all move once (H == H_kv).
+    flops: "full_flops // 2 if is_causal else full_flops"
+    bytes: "2 * (q_elems + kv_elems) * elem_bytes"
+
+  source:
+    kernel: tileops/kernels/attention/multi_head_attention/multi_head_attention.py
+    kernel_map:
+      # K5: the GPU selects between the architecture-generic
+      # GQAPrefillFwdKernel, the Hopper warp-specialized
+      # GQAPrefillFwdWsPersistentCausalKernel and the H200 square
+      # GQAFwdWsPersistentCausalKernel; NPU collapses to the generic
+      # dense prefill kernel.
+      gqa_prefill_fwd_kernel: GQAPrefillFwdKernel
+    op: tileops/ops/attention/multi_head_attention.py
+    test: tests/ops/test_multi_head_attention.py
+    bench: benchmarks/ops/bench_multi_head_attention.py
+    bench_manifest_driven: true
