@@ -4171,8 +4171,8 @@ void CodeGenTileLangNPUIRDEV::AddFunctionForCoreType(const GlobalVar &gvar,
   mlir::hacc::KernelArgTypeAttr workspaceArgAttr = hacc::KernelArgTypeAttr::get(
       builder.getContext(), hacc::KernelArgType::kWorkspace);
   funcOp.setArgAttr(2, "hacc.arg_type", workspaceArgAttr);
-  funcOp->setAttr("SyncBlockLockArgIdx", builder.getI64IntegerAttr(0));
-  funcOp->setAttr("WorkspaceArgIdx", builder.getI64IntegerAttr(1));
+  // HACC device entries use argument roles directly. Legacy Triton index hints
+  // do not describe this FFTS-prefixed ABI and must not be forwarded to CANN.
   auto haccEntryAttr = hacc::stringifyHACCToLLVMIRTranslateAttr(
       hacc::HACCToLLVMIRTranslateAttr::ENTRY);
   funcOp->setAttr(haccEntryAttr, builder.getUnitAttr());
