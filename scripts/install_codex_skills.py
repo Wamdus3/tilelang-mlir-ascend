@@ -14,6 +14,7 @@ NAMES = (
     "harness-prepare-environment", "harness-establish-baseline", "harness-analysis",
     "harness-develop", "harness-device-test",
     "harness-status", "harness-next", "harness-automatic",
+    "ascend950-simulation",
 )
 
 
@@ -47,15 +48,15 @@ def install(project):
         shutil.copytree(SOURCE / name, target / name,
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     ignore = root / ".gitignore"
-    existing_ignore = ignore.read_text() if ignore.exists() else ""
+    existing_ignore = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
     if ".workspace/" not in existing_ignore.splitlines():
-        with ignore.open("a") as output:
+        with ignore.open("a", encoding="utf-8") as output:
             output.write(("\n" if existing_ignore else "") + ".workspace/\n")
     instructions = root / "AGENTS.md"
-    existing = instructions.read_text() if instructions.exists() else ""
+    existing = instructions.read_text(encoding="utf-8") if instructions.exists() else ""
     if "<!-- operator-harness -->" not in existing:
-        entry = (SOURCE.parent / "codex" / "AGENTS.md").read_text()
-        with instructions.open("a") as output:
+        entry = (SOURCE.parent / "codex" / "AGENTS.md").read_text(encoding="utf-8")
+        with instructions.open("a", encoding="utf-8") as output:
             output.write(("\n\n" if existing else "") + entry)
     return target, pending
 

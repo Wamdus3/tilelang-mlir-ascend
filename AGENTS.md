@@ -4,6 +4,8 @@
 
 产品资源不得包含具体工作记录、私人机器路径或写死的外部仓库 commit。外部版本由用户项目选择；任务的实际版本与测量记录保存在私有运行产物中，通用模板和版本一致性检查仍需保留。
 
+TileLang 原生 Skill 快照由 Git 跟踪在 `assets/native-skills/tilelang/`，以官方 `tile-ai/tilelang/main` 为来源，更新方法见 [跟踪说明](assets/native-skills/README.md)。Ascend950 仿真 Skill 位于 `assets/skills/ascend950-simulation/`，由环境准备和 analysis 节点按需加载。
+
 <!-- operator-harness -->
 ## Operator Harness
 

@@ -37,6 +37,8 @@ description: 首次分析标杆的实现思路并形成 TileLang 开发方案；
 
 ## 提交与检查
 
+Ascend950 的 msprof 仿真与 trace 处理读取 [ascend950-simulation](../ascend950-simulation/SKILL.md)，按问题继续读取其 Insight 或 npusim 参考资料。该 Skill 自带离线增强/导出脚本；工具、SoC、频率和采集参数仍以 TASK 的 simulation 绑定为准。
+
 使用实际可用的 simulator CLI 或 MCP。MCP 尚未接入时直接使用已验证入口，不假造工具存在。长任务保存作业 ID、日志和回收方式；按 simulation 约定限制 CPU、并发、时长和输出大小。超时或断线后先查询原作业，保留 partial 产物，不盲目重放。
 
 依次检查进程退出状态、模型错误、输出是否完整及数值比较、trace 是否覆盖所声明范围、解析工具是否成功。程序退出 0 或生成了目录均不足以判仿真成功。数值规则沿用任务契约，不能无条件拒绝契约允许的 NaN/Inf。

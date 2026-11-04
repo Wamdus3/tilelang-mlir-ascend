@@ -98,7 +98,7 @@ analysis 是默认迭代节点；是否运行新仿真或流水采集由问题�
 
 ### 当前可用：Codex 项目流程与节点 skills
 
-本仓库已通过 `.agents/skills/` 接入十一项技能，在 Codex 中选择或输入：
+本仓库通过 `.agents/skills/` 提供十一项流程技能和一项 Ascend950 仿真技能，在 Codex 中选择或输入：
 
 ```text
 $harness-new-project 为我的 TileLang 算子项目明确需求并建立路线图。
@@ -112,6 +112,7 @@ $harness-establish-baseline 根据已绑定环境调查参考实现，验证并�
 $harness-analysis 首次分析标杆实现思路，后续通过仿真和流水分析定位当前 kernel 的问题。
 $harness-develop 按已接收的分析方案和开发约定编写或修复 TileLang 候选。
 $harness-device-test 使用已有上板约定验证当前候选的精度和性能，需继续改进时回到 analysis。
+$ascend950-simulation 按已绑定的仿真环境校验输出并导出流水 trace，或离线处理已有采集。
 ```
 
 `harness-new-project` 用于新项目的需求澄清和规划；`harness-onboard` 用于已有项目接入，这里的 onboard 不执行 NPU 上板。CLI/IDE 也可通过 `/skills` 选择技能；本项目没有注册 `/harness-*` 顶层 slash commands。若技能尚未出现在宿主中，重启会话后再检查。发现与调用方式见 [Codex 技能文档](https://learn.chatgpt.com/docs/build-skills)。
@@ -126,7 +127,11 @@ $harness-device-test 使用已有上板约定验证当前候选的精度和性�
 python3 scripts/install_codex_skills.py --project-dir operator-project
 ```
 
-Git 项目安装到当前 worktree 根；非 Git 项目安装到指定目录。安装器复制十一项技能到 `.agents/skills/`，向 `AGENTS.md` 追加接续指引，并在 `.gitignore` 中加入 `.workspace/`，保留已有内容。重复安装不会重复追加；只比较随包提供的技能文件，用户额外添加的文件保留不动。随包文件存在不同内容时报告冲突。升级与卸载另按路线图建设。
+Git 项目安装到当前 worktree 根；非 Git 项目安装到指定目录。安装器复制十二项技能到 `.agents/skills/`，向 `AGENTS.md` 追加接续指引，并在 `.gitignore` 中加入 `.workspace/`，保留已有内容。重复安装不会重复追加；只比较随包提供的技能文件，用户额外添加的文件保留不动。随包文件存在不同内容时报告冲突。升级与卸载另按路线图建设。
+
+Ascend950 仿真技能包含 msprof trace 增强、npusim SQLite 导出与 Insight 兼容说明，由环境准备和 analysis 节点按需加载。安装 Skill 不安装 CANN 或仿真器。Windows 不支持 Git 软链接的 checkout 可通过上述复制安装器在目标项目使用技能。
+
+官方 `tile-ai/tilelang/main` 的九项原生 Skill 另存于 [`assets/native-skills/`](assets/native-skills/README.md)，由 Git 跟踪，用于离线参考，默认不安装。原文中的仓库命令在对应 TileLang checkout 执行。
 
 Agent 直接维护 `.workspace/` 中的 `PROJECT.md`、`REQUIREMENTS.md`、`ROADMAP.md` 和 `STATE.md`，接入已有项目时补充 `codebase/MAP.md`。这些都是可以直接编辑的 Markdown，按项目进展逐步建立；未决问题和下一步留在状态记录中，草稿与研究材料按需保存。
 
