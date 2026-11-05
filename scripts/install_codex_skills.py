@@ -15,6 +15,7 @@ NAMES = (
     "harness-develop", "harness-device-test",
     "harness-status", "harness-next", "harness-automatic",
     "ascend950-simulation",
+    "tilelang-ascend-generation", "ascend-mfu",
 )
 
 

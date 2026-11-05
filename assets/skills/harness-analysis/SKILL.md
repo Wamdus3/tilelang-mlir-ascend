@@ -11,6 +11,8 @@ description: 首次分析标杆的实现思路并形成 TileLang 开发方案；
 
 默认流程是 `establish-baseline → analysis → develop → device-test → analysis …`；其中 test 对应 `harness-device-test`。目标已达成或用户要求停止时收尾，不为循环新增分析。读取 `.workspace/STATE.md`、TASK 固定的标杆/候选和最近测试结果，明确本次是首次方案分析还是后续问题诊断；不能只凭 run 编号判断首次。
 
+制定 TileLang 方案时读取 [算子生成补充](../tilelang-ascend-generation/SKILL.md)，按算子选择相关的阶段/VF 与流水指导，并把采用的方法落实到交给 develop 的方案。需要解释 Cube 利用率或带宽上限时读取 [ascend-mfu](../ascend-mfu/SKILL.md)，复用已有采集计算，保留 kernel 耗时作为性能比较依据。
+
 ## 首次：分析标杆与开发思路
 
 首次进入本任务的 analysis 时，读取确切 BASELINE ID/修订/摘要、选中实现源码和适配、case/输出契约及测量边界。分析算法阶段与完整调用链、数据组织/布局、并行划分、同步和中间存储，解释逐 shape 分派及其依据；将源码事实、测量观察和待验证推断分开，不从耗时单独猜实现。

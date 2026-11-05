@@ -6,6 +6,8 @@
 
 TileLang 原生 Skill 快照由 Git 跟踪在 `assets/native-skills/tilelang/`，以官方 `tile-ai/tilelang/main` 为来源，更新方法见 [跟踪说明](assets/native-skills/README.md)。Ascend950 仿真 Skill 位于 `assets/skills/ascend950-simulation/`，由环境准备和 analysis 节点按需加载。
 
+个人增补独立维护在 `assets/skills/tilelang-ascend-generation/` 与 `assets/skills/ascend-mfu/`，分别提供算子生成和 MFU/Roofline 指导，不修改官方快照。analysis/develop 通过节点 Skill 加载适用内容。
+
 <!-- operator-harness -->
 ## Operator Harness
 

@@ -113,6 +113,8 @@ $harness-analysis 首次分析标杆实现思路，后续通过仿真和流水�
 $harness-develop 按已接收的分析方案和开发约定编写或修复 TileLang 候选。
 $harness-device-test 使用已有上板约定验证当前候选的精度和性能，需继续改进时回到 analysis。
 $ascend950-simulation 按已绑定的仿真环境校验输出并导出流水 trace，或离线处理已有采集。
+$tilelang-ascend-generation 使用个人增补的阶段/VF 选择、存储预算和自动流水方法编写或优化算子。
+$ascend-mfu 基于有效 Cube 运算和完整 kernel 耗时计算 MFU，或建立条件性 Roofline。
 ```
 
 `harness-new-project` 用于新项目的需求澄清和规划；`harness-onboard` 用于已有项目接入，这里的 onboard 不执行 NPU 上板。CLI/IDE 也可通过 `/skills` 选择技能；本项目没有注册 `/harness-*` 顶层 slash commands。若技能尚未出现在宿主中，重启会话后再检查。发现与调用方式见 [Codex 技能文档](https://learn.chatgpt.com/docs/build-skills)。
@@ -127,11 +129,13 @@ $ascend950-simulation 按已绑定的仿真环境校验输出并导出流水 tra
 python3 scripts/install_codex_skills.py --project-dir operator-project
 ```
 
-Git 项目安装到当前 worktree 根；非 Git 项目安装到指定目录。安装器复制十二项技能到 `.agents/skills/`，向 `AGENTS.md` 追加接续指引，并在 `.gitignore` 中加入 `.workspace/`，保留已有内容。重复安装不会重复追加；只比较随包提供的技能文件，用户额外添加的文件保留不动。随包文件存在不同内容时报告冲突。升级与卸载另按路线图建设。
+Git 项目安装到当前 worktree 根；非 Git 项目安装到指定目录。安装器复制十四项技能到 `.agents/skills/`，向 `AGENTS.md` 追加接续指引，并在 `.gitignore` 中加入 `.workspace/`，保留已有内容。重复安装不会重复追加；只比较随包提供的技能文件，用户额外添加的文件保留不动。随包文件存在不同内容时报告冲突。升级与卸载另按路线图建设。
 
 Ascend950 仿真技能包含 msprof trace 增强、npusim SQLite 导出与 Insight 兼容说明，由环境准备和 analysis 节点按需加载。安装 Skill 不安装 CANN 或仿真器。Windows 不支持 Git 软链接的 checkout 可通过上述复制安装器在目标项目使用技能。
 
 官方 `tile-ai/tilelang/main` 的九项原生 Skill 另存于 [`assets/native-skills/`](assets/native-skills/README.md)，由 Git 跟踪，用于离线参考，默认不安装。原文中的仓库命令在对应 TileLang checkout 执行。
+
+个人增补独立放在 `assets/skills/` 并随安装器分发：[tilelang-ascend-generation](assets/skills/tilelang-ascend-generation/SKILL.md) 从个人 TileLang 仓库提取阶段拆分、SIMD/SIMT 选择和自动流水指导，供 analysis/develop 使用；[ascend-mfu](assets/skills/ascend-mfu/SKILL.md) 迁入个人 MFU Skill 的计算口径、Cube 算力表及 MFU/Roofline 脚本，供性能分析使用。这些是独立维护的扩展，官方跟踪目录保持原文。
 
 Agent 直接维护 `.workspace/` 中的 `PROJECT.md`、`REQUIREMENTS.md`、`ROADMAP.md` 和 `STATE.md`，接入已有项目时补充 `codebase/MAP.md`。这些都是可以直接编辑的 Markdown，按项目进展逐步建立；未决问题和下一步留在状态记录中，草稿与研究材料按需保存。
 
